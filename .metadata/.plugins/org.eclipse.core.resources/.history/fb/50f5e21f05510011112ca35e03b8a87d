@@ -338,25 +338,16 @@ int main(void) {
 			is_stable = (max_v - min_v < 0.05f) ? 1 : 0;
 
 			if (is_recording) {
-			    char buf[128];
-			    sprintf(buf,
-			            "%02d.%02d.%02d %02d:%02d:%02d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f\n",
-			            current_time.date, current_time.month,
-			            current_time.year, current_time.hours,
-			            current_time.minutes, current_time.seconds, angle_x,
-			            angle_y, offset_x, offset_y, calc_x, calc_y, battery_v);
-
-			    UINT bw;
-			    FRESULT w_res = f_write(&fil, buf, strlen(buf), &bw);
-			    f_sync(&fil); // Обязательно синхронизируем данные!
-
-			    // Если произошла ошибка (флешку выдернули)
-			    if (w_res != FR_OK || bw == 0) {
-			        f_close(&fil);         // Закрываем дескриптор
-			        is_recording = 0;      // Сбрасываем флаг записи
-			        file_number = 0;       // Сбрасываем номер файла (включаем ошибку)
-			        sd_err_code = w_res;   // Запоминаем код ошибки для экрана
-			    }
+				char buf[128];
+				sprintf(buf,
+						"%02d.%02d.%02d %02d:%02d:%02d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f\n",
+						current_time.date, current_time.month,
+						current_time.year, current_time.hours,
+						current_time.minutes, current_time.seconds, angle_x,
+						angle_y, offset_x, offset_y, calc_x, calc_y, battery_v);
+				UINT bw;
+				f_write(&fil, buf, strlen(buf), &bw);
+				f_sync(&fil);
 			}
 			sensor_timer = HAL_GetTick();
 		}
@@ -372,33 +363,7 @@ int main(void) {
 			HAL_ADC_Start(&hadc1);
 			bat_timer = HAL_GetTick();
 		}
-		// === ПРОВЕРКА НАЛИЧИЯ SD КАРТЫ (ГОРЯЧАЯ ЗАМЕНА) ===
-		static uint32_t sd_check_timer = 0;
-		if (!is_recording && (HAL_GetTick() - sd_check_timer >= 1500)) { // Проверяем раз в 1.5 секунды
-		    DIR dir;
-		    if (file_number > 0) {
-		        // Пытаемся прочитать корень. Если флешки нет - выдаст ошибку
-		        if (f_opendir(&dir, "/") != FR_OK) {
-		            file_number = 0; // Сбрасываем статус (вызовет надпись SD ERR)
-		            sd_err_code = 3; // FR_NOT_READY
-		        }
-		    } else {
-		        // Если флешки не было (file_number == 0), пытаемся примонтировать её заново
-		        f_mount(NULL, "", 0); // Отмонтируем старую сессию
-		        HAL_Delay(10);
-		        if (f_mount(&fs, "", 1) == FR_OK) { // Если флешку вставили
-		            FILINFO fno;
-		            for (uint16_t i = 1; i <= 999; i++) {
-		                sprintf(current_filename, "M_%03d.CSV", i);
-		                if (f_stat(current_filename, &fno) != FR_OK) {
-		                    file_number = i; // Нашли свободное имя, возвращаем систему в норму
-		                    break;
-		                }
-		            }
-		        }
-		    }
-		    sd_check_timer = HAL_GetTick();
-		}
+
 		// 6. ОБНОВЛЕН�?Е ЭКРАНА (Новый просторный дизайн)
 		if (HAL_GetTick() - lcd_timer >= 50) {
 			static float old_x = -999.0f, old_y = -999.0f;

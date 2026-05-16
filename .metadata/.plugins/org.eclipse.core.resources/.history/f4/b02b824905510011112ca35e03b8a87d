@@ -338,25 +338,16 @@ int main(void) {
 			is_stable = (max_v - min_v < 0.05f) ? 1 : 0;
 
 			if (is_recording) {
-			    char buf[128];
-			    sprintf(buf,
-			            "%02d.%02d.%02d %02d:%02d:%02d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f\n",
-			            current_time.date, current_time.month,
-			            current_time.year, current_time.hours,
-			            current_time.minutes, current_time.seconds, angle_x,
-			            angle_y, offset_x, offset_y, calc_x, calc_y, battery_v);
-
-			    UINT bw;
-			    FRESULT w_res = f_write(&fil, buf, strlen(buf), &bw);
-			    f_sync(&fil); // Обязательно синхронизируем данные!
-
-			    // Если произошла ошибка (флешку выдернули)
-			    if (w_res != FR_OK || bw == 0) {
-			        f_close(&fil);         // Закрываем дескриптор
-			        is_recording = 0;      // Сбрасываем флаг записи
-			        file_number = 0;       // Сбрасываем номер файла (включаем ошибку)
-			        sd_err_code = w_res;   // Запоминаем код ошибки для экрана
-			    }
+				char buf[128];
+				sprintf(buf,
+						"%02d.%02d.%02d %02d:%02d:%02d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f\n",
+						current_time.date, current_time.month,
+						current_time.year, current_time.hours,
+						current_time.minutes, current_time.seconds, angle_x,
+						angle_y, offset_x, offset_y, calc_x, calc_y, battery_v);
+				UINT bw;
+				f_write(&fil, buf, strlen(buf), &bw);
+				f_sync(&fil);
 			}
 			sensor_timer = HAL_GetTick();
 		}

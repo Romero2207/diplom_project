@@ -3,6 +3,6 @@
 ../Core/Src/fatfs_sd.c:29:13:SD_SendCmd	24	static
 ../Core/Src/fatfs_sd.c:54:9:SD_disk_initialize	40	static
 ../Core/Src/fatfs_sd.c:81:9:SD_disk_status	16	static
-../Core/Src/fatfs_sd.c:85:9:SD_disk_read	32	static
-../Core/Src/fatfs_sd.c:108:9:SD_disk_write	32	static
-../Core/Src/fatfs_sd.c:130:9:SD_disk_ioctl	24	static
+../Core/Src/fatfs_sd.c:85:9:SD_disk_read	48	static
+../Core/Src/fatfs_sd.c:119:9:SD_disk_write	40	static
+../Core/Src/fatfs_sd.c:156:9:SD_disk_ioctl	24	static

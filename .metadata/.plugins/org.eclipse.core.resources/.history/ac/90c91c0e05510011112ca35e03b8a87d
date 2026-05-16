@@ -358,8 +358,6 @@ int main(void) {
 			        sd_err_code = w_res;   // Запоминаем код ошибки для экрана
 			    }
 			}
-			sensor_timer = HAL_GetTick();
-		}
 
 		// 5. МОН�?ТОР�?НГ БАТАРЕ�? (Новый коэффициент для 10к и 3.3к)
 		static uint32_t bat_timer = 0;
@@ -372,33 +370,7 @@ int main(void) {
 			HAL_ADC_Start(&hadc1);
 			bat_timer = HAL_GetTick();
 		}
-		// === ПРОВЕРКА НАЛИЧИЯ SD КАРТЫ (ГОРЯЧАЯ ЗАМЕНА) ===
-		static uint32_t sd_check_timer = 0;
-		if (!is_recording && (HAL_GetTick() - sd_check_timer >= 1500)) { // Проверяем раз в 1.5 секунды
-		    DIR dir;
-		    if (file_number > 0) {
-		        // Пытаемся прочитать корень. Если флешки нет - выдаст ошибку
-		        if (f_opendir(&dir, "/") != FR_OK) {
-		            file_number = 0; // Сбрасываем статус (вызовет надпись SD ERR)
-		            sd_err_code = 3; // FR_NOT_READY
-		        }
-		    } else {
-		        // Если флешки не было (file_number == 0), пытаемся примонтировать её заново
-		        f_mount(NULL, "", 0); // Отмонтируем старую сессию
-		        HAL_Delay(10);
-		        if (f_mount(&fs, "", 1) == FR_OK) { // Если флешку вставили
-		            FILINFO fno;
-		            for (uint16_t i = 1; i <= 999; i++) {
-		                sprintf(current_filename, "M_%03d.CSV", i);
-		                if (f_stat(current_filename, &fno) != FR_OK) {
-		                    file_number = i; // Нашли свободное имя, возвращаем систему в норму
-		                    break;
-		                }
-		            }
-		        }
-		    }
-		    sd_check_timer = HAL_GetTick();
-		}
+
 		// 6. ОБНОВЛЕН�?Е ЭКРАНА (Новый просторный дизайн)
 		if (HAL_GetTick() - lcd_timer >= 50) {
 			static float old_x = -999.0f, old_y = -999.0f;

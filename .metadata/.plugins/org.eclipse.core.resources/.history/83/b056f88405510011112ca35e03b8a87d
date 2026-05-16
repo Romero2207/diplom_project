@@ -358,8 +358,6 @@ int main(void) {
 			        sd_err_code = w_res;   // Запоминаем код ошибки для экрана
 			    }
 			}
-			sensor_timer = HAL_GetTick();
-		}
 
 		// 5. МОН�?ТОР�?НГ БАТАРЕ�? (Новый коэффициент для 10к и 3.3к)
 		static uint32_t bat_timer = 0;
