@@ -1,4 +1,4 @@
-12:22:04 **** Incremental Build of configuration Debug for project BWM427_Inclinometer ****
+12:29:19 **** Incremental Build of configuration Debug for project BWM427_Inclinometer ****
 make -j12 all 
 arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m4 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F411xE -c -I../FATFS/App -I../FATFS/Target -I../Core/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc -I"C:/ST/diplom_project/BWM427_Inclinometer/Middlewares/Third_Party/FatFs/src" -I../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
 ../Core/Src/main.c: In function 'main':
@@ -11,11 +11,11 @@ Finished building target: BWM427_Inclinometer.elf
 arm-none-eabi-size   BWM427_Inclinometer.elf 
 arm-none-eabi-objdump -h -S  BWM427_Inclinometer.elf  > "BWM427_Inclinometer.list"
    text	   data	    bss	    dec	    hex	filename
-  69228	    556	   3444	  73228	  11e0c	BWM427_Inclinometer.elf
+  69220	    556	   3444	  73220	  11e04	BWM427_Inclinometer.elf
 Finished building: default.size.stdout
  
 Finished building: BWM427_Inclinometer.list
  
 
-12:22:05 Build Finished. 0 errors, 1 warnings. (took 1s.70ms)
+12:29:20 Build Finished. 0 errors, 1 warnings. (took 1s.87ms)
 

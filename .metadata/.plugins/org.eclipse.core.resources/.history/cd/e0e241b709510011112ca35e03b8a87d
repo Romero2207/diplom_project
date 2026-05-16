@@ -367,12 +367,12 @@ int main(void) {
 			sensor_timer = HAL_GetTick();
 		}
 
-		// 5. МОНИТОРИНГ БАТАРЕИ (для 10к и 3.3к)
+		// 5. МОНИТОРИНГ БАТАРЕИ (Новый коэффициент для 10к и 3.3к)
 		static uint32_t bat_timer = 0;
 		if (HAL_GetTick() - bat_timer >= 1000) {
 			if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK) {
 				uint32_t adc_val = HAL_ADC_GetValue(&hadc1);
-				// Коэффициент 4.03f
+				// Коэффициент 4.03f для твоего делителя
 				battery_v = ((float) adc_val / 4095.0f) * 3.3f * 4.03f;
 			}
 			HAL_ADC_Start(&hadc1);
@@ -950,7 +950,7 @@ void BWM427_ReadAngles(void) {
 	HAL_GPIO_WritePin(RS485_RE_PORT, RS485_RE_PIN, GPIO_PIN_RESET);
 
 // Принять ответ (9 байт)
-	if (HAL_UART_Receive(&huart1, rx_buffer, 9, 50) == HAL_OK) {
+	if (HAL_UART_Receive(&huart1, rx_buffer, 9, 15) == HAL_OK) {
 		// Проверить контрольную сумму ответа
 		uint16_t received_crc = (rx_buffer[8] << 8) | rx_buffer[7];
 		if (Modbus_CRC16(rx_buffer, 7) == received_crc) {
