@@ -15,14 +15,12 @@ extern SPI_HandleTypeDef hspi2;
 static volatile DSTATUS Stat = STA_NOINIT;
 
 static void SPI_TxByte(BYTE data) {
-    BYTE dummy_rx;
-    HAL_SPI_TransmitReceive(&hspi2, &data, &dummy_rx, 1, 100);
+    HAL_SPI_Transmit(&hspi2, &data, 1, 1000);
 }
 
 static BYTE SPI_RxByte(void) {
     BYTE data = 0;
-    BYTE dummy_tx = 0xFF;
-    HAL_SPI_TransmitReceive(&hspi2, &dummy_tx, &data, 1, 100);
+    HAL_SPI_Receive(&hspi2, &data, 1, 1000);
     return data;
 }
 
