@@ -57,53 +57,43 @@ static BYTE SD_SendCmd(BYTE cmd, DWORD arg) {
 }
 
 DSTATUS SD_disk_initialize(BYTE pdrv) {
-    BYTE n, ty, ocr[4];
-    if (pdrv) return STA_NOINIT;
+	BYTE n, ty, ocr[4];
+	if (pdrv)
+		return STA_NOINIT;
 
-    Stat = STA_NOINIT;
-    SD_CS_HIGH();
-    HAL_Delay(10); // Ждем устаканивания контактов слота
+	Stat = STA_NOINIT; // Принудительно сбрасываем статус перед стартом
+	SD_CS_HIGH();
 
-    // 80 тактов пустышек для гарантированного запуска внутреннего осциллятора SD-карты
-    for (n = 80; n; n--) SPI_TxByte(0xFF);
-
-    ty = 0;
-
-    // БРОНЕБОЙНЫЙ ЗАПУСК: карта может проигнорировать первый пакет
-    // из-за дребезга питания. Пытаемся достучаться 10 раз!
-    uint8_t is_idle = 0;
-    for (BYTE r = 0; r < 10; r++) {
-        if (SD_SendCmd(CMD0, 0) == 1) {
-            is_idle = 1;
-            break; // Карта успешно проснулась!
-        }
-        SD_CS_HIGH();      // Обязательно передергиваем Chip Select
-        SPI_TxByte(0xFF);  // Выгоняем мусор из шины
-        HAL_Delay(10);     // Даем паузу перед новой попыткой
-    }
-
-    if (is_idle) { // Если карта наконец-то ответила
-        if (SD_SendCmd(CMD8, 0x1AA) == 1) {
-            for (n = 0; n < 4; n++) ocr[n] = SPI_RxByte();
-            if (ocr[2] == 0x01 && ocr[3] == 0xAA) {
-                uint16_t timeout = 1000;
-                while (SD_SendCmd(ACMD41, 1UL << 30) && timeout--) HAL_Delay(1);
-                if (timeout > 0) ty = 1;
-            }
-        } else {
-            uint16_t timeout = 1000;
-            while (SD_SendCmd(ACMD41, 0) && timeout--) HAL_Delay(1);
-            if (timeout > 0) ty = 1;
-        }
-    }
-
-    SD_CS_HIGH();
-    SPI_RxByte();
-
-    if (ty) Stat &= ~STA_NOINIT;
-    else Stat = STA_NOINIT;
-
-    return Stat;
+	// Даем больше пустышек (30 вместо 10) для стабилизации логики карты
+	for (n = 30; n; n--)
+		SPI_TxByte(0xFF);
+	ty = 0;
+	if (SD_SendCmd(CMD0, 0) == 1) {
+		if (SD_SendCmd(CMD8, 0x1AA) == 1) {
+			for (n = 0; n < 4; n++)
+				ocr[n] = SPI_RxByte();
+			if (ocr[2] == 0x01 && ocr[3] == 0xAA) {
+				uint16_t timeout = 1000;
+				while (SD_SendCmd(ACMD41, 1UL << 30) && timeout--)
+					HAL_Delay(1);
+				if (timeout > 0)
+					ty = 1;
+			}
+		} else {
+			uint16_t timeout = 1000;
+			while (SD_SendCmd(ACMD41, 0) && timeout--)
+				HAL_Delay(1);
+			if (timeout > 0)
+				ty = 1;
+		}
+	}
+	SD_CS_HIGH();
+	SPI_RxByte();
+	if (ty)
+		Stat &= ~STA_NOINIT;
+	else
+		Stat = STA_NOINIT;
+	return Stat;
 }
 DSTATUS SD_disk_status(BYTE pdrv) {
 	return Stat;

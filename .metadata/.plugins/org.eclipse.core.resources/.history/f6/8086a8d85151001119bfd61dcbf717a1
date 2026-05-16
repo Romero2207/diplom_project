@@ -381,34 +381,29 @@ int main(void) {
 
 		// === ПРОВЕРКА НАЛИЧИЯ SD КАРТЫ (ГОРЯЧАЯ ЗАМЕНА) ===
 		static uint32_t sd_check_timer = 0;
-		static FRESULT last_mount_res = FR_NOT_READY; // Переменная для вывода ошибки на экран
-
-		if (!is_recording && (HAL_GetTick() - sd_check_timer >= 2000)) { // Проверяем раз в 2 секунды
+		if (!is_recording && (HAL_GetTick() - sd_check_timer >= 1000)) { // Проверяем каждую секунду
 			if (file_number > 0) {
+				// 1. Флешка БЫЛА. Проверяем её наличие (пытаемся прочесть несуществующий файл)
 				FILINFO fno;
 				FRESULT res = f_stat("CHECK.TXT", &fno);
 				if (res == FR_NOT_READY || res == FR_DISK_ERR) {
-					file_number = 0;
-					f_mount(NULL, "", 0); // Отмонтируем
+					file_number = 0;  // Карту точно вытащили! Сбрасываем статус
+					f_mount(NULL, "", 0); // Жестко размонтируем сессию
 				}
 			} else {
-				f_mount(NULL, "", 0); // Очищаем старую сессию
-
-				// Точечно очищаем аппаратный залип шины SPI (ошибку OVR), не отключая пины!
-				__HAL_SPI_CLEAR_OVRFLAG(&hspi2);
-
-				// Ждем целых полсекунды! Синие модули SD дают сильную просадку
-				// напряжения при горячем подключении, из-за чего карта виснет
-				HAL_Delay(500);
-
-				last_mount_res = f_mount(&fs, "", 1); // Пробуем жестко примонтировать
-
-				if (last_mount_res == FR_OK) {
+				// 2. Флешки НЕ БЫЛО. Полностью сбрасываем старую сессию и монтируем заново
+				f_mount(NULL, "", 0);
+				HAL_Delay(40);
+				if (f_mount(&fs, "", 1) == FR_OK) {
 					FILINFO fno;
+					// Ищем свободное имя для нового файла
 					for (uint16_t i = 1; i <= 999; i++) {
 						sprintf(current_filename, "M_%03d.CSV", i);
-						if (f_stat(current_filename, &fno) == FR_NO_FILE) {
-							file_number = i; // Ура, карта ожила!
+						FRESULT res = f_stat(current_filename, &fno);
+
+						// ПРАВИЛЬНОЕ УСЛОВИЕ: только если карта ответила "Файл не найден"
+						if (res == FR_NO_FILE) {
+							file_number = i; // Нашли свободное имя, карта официально готова!
 							break;
 						}
 					}
@@ -473,18 +468,15 @@ int main(void) {
 			sprintf(str_lcd, "BAT:%.1fV", battery_v);
 			ILI9341_WriteString(5, 220, str_lcd, Font_7x10, 0xFFFF, 0x0000);
 
-			// Отрисовка статуса SD на общей линии Y = 220
+			// Отрисовка нижней панели статуса SD
 			if (file_number > 0) {
 				char status_str[30];
 				sprintf(status_str, "FILE:%s   ", current_filename);
 				ILI9341_WriteString(70, 220, status_str, Font_7x10, 0xFFE0,
 						0x0000);
 			} else {
-				char err_str[30];
-				// ТЕПЕРЬ ЭКРАН ПОКАЖЕТ КОД ОШИБКИ FATFS!
-				sprintf(err_str, "NO SD (E:%02d)   ", last_mount_res);
-				ILI9341_WriteString(70, 220, err_str, Font_7x10, 0xF800,
-						0x0000);
+				ILI9341_WriteString(70, 220, "NO SD CARD       ", Font_7x10,
+						0xF800, 0x0000);
 			}
 
 			if (is_stable) {
