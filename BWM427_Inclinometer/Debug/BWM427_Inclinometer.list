@@ -3680,8 +3680,8 @@ int main(void) {
  80020f4:	492c      	ldr	r1, [pc, #176]	; (80021a8 <main+0x8e8>)
  80020f6:	2000      	movs	r0, #0
  80020f8:	f008 f880 	bl	800a1fc <f_mount>
-				HAL_Delay(10);
- 80020fc:	200a      	movs	r0, #10
+				HAL_Delay(40);
+ 80020fc:	2028      	movs	r0, #40	; 0x28
  80020fe:	f001 fb79 	bl	80037f4 <HAL_Delay>
 				if (f_mount(&fs, "", 1) == FR_OK) {
  8002102:	2201      	movs	r2, #1

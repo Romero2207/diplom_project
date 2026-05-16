@@ -6,23 +6,23 @@
 		<item key="wholeword" value="false"/>
 		<item key="incremental" value="false"/>
 		<item key="isRegEx" value="false"/>
-		<item key="selection" value=""/>
+		<item key="selection" value="HAL_UART_Receive"/>
 		<list key="findhistory">
-			<item value="static void SPI_TxByte"/>
-			<item value="f_mount"/>
-			<item value="SD_disk_initialize"/>
-			<item value="#define RS485_DE_PIN  GPIO_PIN_8"/>
-			<item value="define RS485_DE_PIN  GPIO_PIN_8&#x0A;#define RS485_DE_PORT GPIOA"/>
-			<item value="FRESULT res = f_mount(&amp;fs, &quot;&quot;, 1);"/>
-			<item value="hspi1"/>
-			<item value="ILI9341_FillScreen"/>
-			<item value="ILI9341_WriteChar"/>
-			<item value="рамк"/>
-			<item value="рамка"/>
-			<item value="отрисовка"/>
-			<item value="обновле"/>
-			<item value="if (f_mount(&amp;fs, &quot;&quot;, 1) == FR_OK"/>
-			<item value="uint16_t file_number = 1;"/>
+			<item value="HAL_UART_Receive"/>
+			<item value="if (is_recording) {"/>
+			<item value="ОБРАБОТКА ТУМБЛЕРА"/>
+			<item value="if (is_recording) "/>
+			<item value="if (is_recording) {&#x0A;    char buf[128];"/>
+			<item value="проверка нали"/>
+			<item value="if (is_recording) {&#x0A;"/>
+			<item value="while"/>
+			<item value="ОБНОВЛЕНИЕ ЭКРАНА"/>
+			<item value=";"/>
+			<item value="SD_disk_read"/>
+			<item value="SPI_RxByte"/>
+			<item value="extern SPI_HandleTypeDef hspi1;"/>
+			<item value="int16_t diff ="/>
+			<item value="if (HAL_UART_Receive(&amp;huart1, rx_buffer, 9, 50) == HAL_OK)"/>
 		</list>
 		<list key="replacehistory">
 			<item value="hspi2"/>
@@ -30,8 +30,8 @@
 		</list>
 	</section>
 	<section name="org.eclipse.ui.texteditor.FindReplaceDialog_dialogBounds">
-		<item key="DIALOG_X_ORIGIN" value="1051"/>
-		<item key="DIALOG_Y_ORIGIN" value="336"/>
+		<item key="DIALOG_X_ORIGIN" value="1461"/>
+		<item key="DIALOG_Y_ORIGIN" value="524"/>
 		<item key="DIALOG_WIDTH" value="414"/>
 		<item key="DIALOG_HEIGHT" value="454"/>
 		<item key="DIALOG_FONT_NAME" value="1|Segoe UI|9.0|0|WINDOWS|1|-15|0|0|0|400|0|0|0|1|0|0|0|0|Segoe UI"/>

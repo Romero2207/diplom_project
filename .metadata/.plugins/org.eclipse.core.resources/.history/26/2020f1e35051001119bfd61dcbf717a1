@@ -59,6 +59,7 @@ ADC_HandleTypeDef hadc1;
 I2C_HandleTypeDef hi2c1;
 
 SPI_HandleTypeDef hspi1;
+SPI_HandleTypeDef hspi2;
 
 TIM_HandleTypeDef htim3;
 
@@ -81,6 +82,7 @@ FATFS fs;
 FIL fil;
 uint8_t is_recording = 0;
 uint16_t file_number = 0;
+uint8_t sd_err_code = 0; // Переменная для кода ошибки
 char current_filename[16];
 
 // --- �?нтерфейс и энкодер ---
@@ -96,10 +98,10 @@ uint8_t prev_edit_mode = 255;
 float battery_v = 0.0f;
 
 // --- Настройка RS485 (MAX485) ---
-#define RS485_DE_PIN  GPIO_PIN_8
-#define RS485_DE_PORT GPIOA
-#define RS485_RE_PIN  GPIO_PIN_15
-#define RS485_RE_PORT GPIOB
+#define RS485_DE_PIN  RS485_DE_Pin
+#define RS485_DE_PORT RS485_DE_GPIO_Port
+#define RS485_RE_PIN  RS485_RE_Pin
+#define RS485_RE_PORT RS485_RE_GPIO_Port
 
 // --- Системные таймеры и алгоритм стабильности ---
 uint32_t record_start_ms = 0;
@@ -114,10 +116,11 @@ uint32_t lcd_timer = 0;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
-static void MX_SPI1_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_SPI2_Init(void);
+static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 // Опросить датчик по протоколу Modbus RTU
 void BWM427_ReadAngles(void);
@@ -173,16 +176,17 @@ int main(void) {
 	/* Initialize all configured peripherals */
 	MX_GPIO_Init();
 	MX_USART1_UART_Init();
-	MX_SPI1_Init();
 	MX_I2C1_Init();
 	MX_FATFS_Init();
 	MX_ADC1_Init();
 	MX_TIM3_Init();
+	MX_SPI2_Init();
+	MX_SPI1_Init();
 	/* USER CODE BEGIN 2 */
 	// Выждать время для стабилизации питания и инициализации USB
 	HAL_Delay(1000);
 
-	// === ИНИЦИАЛИЗАЦИЯ ДИСПЛЕЯ ===
+	// === �?Н�?Ц�?АЛ�?ЗАЦ�?Я Д�?СПЛЕЯ ===
 	ILI9341_Init();
 	ILI9341_FillScreen(0x0000);
 
@@ -195,8 +199,10 @@ int main(void) {
 	// Считать начальное значение энкодера
 	last_encoder_cnt = __HAL_TIM_GET_COUNTER(&htim3);
 
-	// �?нициализировать SD-карту и найти первый свободный номер файла (M_XXX.CSV)
-	if (f_mount(&fs, "", 1) == FR_OK) {
+	// �?нициализировать SD-карту
+	HAL_Delay(500);
+	FRESULT res = f_mount(&fs, "", 1);
+	if (res == FR_OK) {
 		FILINFO fno;
 		for (uint16_t i = 1; i <= 999; i++) {
 			sprintf(current_filename, "M_%03d.CSV", i);
@@ -206,7 +212,8 @@ int main(void) {
 			}
 		}
 	} else {
-		file_number = 0; // Если флешки нет, сбрасываем в ноль
+		file_number = 0;
+		sd_err_code = res; // Сохраняем код ошибки!
 	}
 	// === �?НД�?КАЦ�?Я УСПЕШНОГО ЗАПУСКА ===
 	for (int i = 0; i < 2; i++) {
@@ -224,11 +231,10 @@ int main(void) {
 	DS3231_GetTime(&current_time);
 	if (current_time.year < 26) {
 		// Если год меньше 26, прошиваем время (например: 11:11:00, 11 сентября 01 года)
-		DS3231_SetFullTime(20, 22, 00, 7, 5, 26);
+		DS3231_SetFullTime(11, 49, 00, 16, 5, 26);
 	}
 
 	static uint8_t last_sw_state = 0; // Сохранить прошлое состояние тумблера
-
 	while (1) {
 		char str_lcd[64];
 		DS3231_GetTime(&current_time); // Получаем время с часов
@@ -238,7 +244,7 @@ int main(void) {
 		int16_t raw_diff = (int16_t) (current_cnt - last_encoder_cnt);
 
 		if (raw_diff >= 4 || raw_diff <= -4) {
-			int16_t diff = -(raw_diff / 4); // Реверс и деление на 4
+			int16_t diff = (raw_diff / 4); // Реверс и деление на 4
 			last_encoder_cnt = current_cnt;
 
 			if (edit_mode) {
@@ -265,38 +271,49 @@ int main(void) {
 			}
 		}
 
-		// 2. МГНОВЕННАЯ �? ЕД�?НСТВЕННАЯ ОТР�?СОВКА РАМК�?
+		// 2. МГНОВЕННАЯ ОТРИСОВКА РАМКИ (Эстетичная сетка)
 		if (menu_index != prev_menu_index || edit_mode != prev_edit_mode) {
-			// Стираем рамку со старого места (X=55, Y=97)
+			// Координаты для 3 пунктов: 0-Freq, 1-Alpha, 2-Zero
+			const uint16_t frame_x[3] = { 15, 165, 75 };
+			const uint16_t frame_y[3] = { 145, 145, 185 };
+			const uint16_t frame_w[3] = { 115, 125, 170 };
+
 			if (prev_menu_index != -1) {
-				int old_y = 97 + (prev_menu_index * 30);
-				My_DrawFrame(55, old_y, 185, 24, 0x0000);
+				// Стираем старую рамку цветом фона (черным)
+				My_DrawFrame(frame_x[prev_menu_index], frame_y[prev_menu_index],
+						frame_w[prev_menu_index], 24, 0x0000);
 			}
 
-			// Рисуем рамку на новом месте
-			int frame_y = 97 + (menu_index * 30);
+			// Рисуем новую рамку (Желтая - редактирование, Голубая - выбор)
 			uint16_t frame_color = edit_mode ? 0xFFE0 : 0x07FF;
-			My_DrawFrame(55, frame_y, 185, 24, frame_color);
+			My_DrawFrame(frame_x[menu_index], frame_y[menu_index],
+					frame_w[menu_index], 24, frame_color);
 
 			prev_menu_index = menu_index;
 			prev_edit_mode = edit_mode;
 		}
 
-		// 3. УПРАВЛЕНИЕ ЗАПИСЬЮ (Тумблер на PA3 - срабатывает при замыкании на GND)
+		// 3. УПРАВЛЕНИЕ ЗАПИСЬЮ (Тумблер на PA3 - 0 когда включен, 1 когда выключен)
+		static uint8_t recording_blocked = 0; // Флаг блокировки авто-старта после сбоя
 		uint8_t current_sw = HAL_GPIO_ReadPin(SW_RECORD_GPIO_Port,
 		SW_RECORD_Pin);
 
-		if (current_sw == 0 && last_sw_state == 1) { // Замкнули на землю
-			if (f_open(&fil, current_filename, FA_CREATE_ALWAYS | FA_WRITE)
-					== FR_OK) {
-				record_start_ms = HAL_GetTick();
-				char header[] =
-						"Time,RawX,RawY,OffsetX,OffsetY,CalcX,CalcY,BatV\n";
-				UINT bw;
-				f_write(&fil, header, strlen(header), &bw);
-				is_recording = 1;
+		if (current_sw == 0) { // Тумблер в положении ЗАПИСЬ (замкнут на GND)
+			// Начинаем запись только если не пишем, нет блокировки ошибки и карта готова
+			if (!is_recording && !recording_blocked && file_number > 0) {
+				if (f_open(&fil, current_filename, FA_CREATE_ALWAYS | FA_WRITE)
+						== FR_OK) {
+					record_start_ms = HAL_GetTick();
+					char header[] =
+							"Time,RawX,RawY,OffsetX,OffsetY,CalcX,CalcY,BatV\n";
+					UINT bw;
+					f_write(&fil, header, strlen(header), &bw);
+					is_recording = 1;
+				}
 			}
-		} else if (current_sw == 1 && last_sw_state == 0) { // Разомкнули
+		} else { // Тумблер в положении СТОП (разомкнут, подтянут к 1)
+			recording_blocked = 0; // Перевели тумблер вниз – полностью сняли блокировку сбоя!
+
 			if (is_recording) {
 				f_close(&fil);
 				is_recording = 0;
@@ -306,7 +323,7 @@ int main(void) {
 		}
 		last_sw_state = current_sw;
 
-		// 4. ОПРОС ДАТЧ�?КА �? РАСЧЕТ СТАБ�?ЛЬНОСТ�?
+		// 4. ОПРОС ДАТЧИКА И РАСЧЕТ СТАБИЛЬНОСТИ
 		static uint32_t sensor_timer = 0;
 		if (HAL_GetTick() - sensor_timer >= log_delay_ms) {
 			BWM427_ReadAngles();
@@ -333,87 +350,146 @@ int main(void) {
 						current_time.year, current_time.hours,
 						current_time.minutes, current_time.seconds, angle_x,
 						angle_y, offset_x, offset_y, calc_x, calc_y, battery_v);
+
 				UINT bw;
-				f_write(&fil, buf, strlen(buf), &bw);
-				//f_sync(&fil);
+				FRESULT w_res = f_write(&fil, buf, strlen(buf), &bw);
+				f_sync(&fil); // Обязательно синхронизируем данные!
+
+				// Если произошла ошибка (флешку выдернули)
+				if (w_res != FR_OK || bw == 0) {
+					f_close(&fil);         // Закрываем дескриптор
+					is_recording = 0;      // Сбрасываем флаг записи
+					file_number = 0; // Сбрасываем номер файла (включаем ошибку)
+					sd_err_code = w_res;   // Запоминаем код ошибки для экрана
+					recording_blocked = 1; // Защита от авто-старта до перещелкивания тумблера
+				}
 			}
 			sensor_timer = HAL_GetTick();
 		}
 
-		// 5. МОНИТОРИНГ БАТАРЕИ (Новый коэффициент для 10к и 3.3к)
+		// 5. МОНИТОРИНГ БАТАРЕИ (для 10к и 3.3к)
 		static uint32_t bat_timer = 0;
 		if (HAL_GetTick() - bat_timer >= 1000) {
 			if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK) {
 				uint32_t adc_val = HAL_ADC_GetValue(&hadc1);
-				// Коэффициент 4.03f для твоего делителя
+				// Коэффициент 4.03f
 				battery_v = ((float) adc_val / 4095.0f) * 3.3f * 4.03f;
 			}
 			HAL_ADC_Start(&hadc1);
 			bat_timer = HAL_GetTick();
 		}
 
-		// 6. ОБНОВЛЕНИЕ ЭКРАНА
-				if (HAL_GetTick() - lcd_timer >= 50) {
-					static float old_x = -999.0f, old_y = -999.0f;
-					float cur_x = angle_x - offset_x;
-					float cur_y = angle_y - offset_y;
+		// === ПРОВЕРКА НАЛИЧИЯ SD КАРТЫ (ГОРЯЧАЯ ЗАМЕНА) ===
+		static uint32_t sd_check_timer = 0;
+		if (!is_recording && (HAL_GetTick() - sd_check_timer >= 1000)) { // Проверяем каждую секунду
+			if (file_number > 0) {
+				// 1. Флешка БЫЛА. Проверяем её наличие (пытаемся прочесть несуществующий файл)
+				FILINFO fno;
+				FRESULT res = f_stat("CHECK.TXT", &fno);
+				if (res == FR_NOT_READY || res == FR_DISK_ERR) {
+					file_number = 0;  // Карту точно вытащили! Сбрасываем статус
+					f_mount(NULL, "", 0); // Жестко размонтируем сессию
+				}
+			} else {
+				// 2. Флешки НЕ БЫЛО. Полностью сбрасываем старую сессию и монтируем заново
+				f_mount(NULL, "", 0);
+				HAL_Delay(10);
+				if (f_mount(&fs, "", 1) == FR_OK) {
+					FILINFO fno;
+					// Ищем свободное имя для нового файла
+					for (uint16_t i = 1; i <= 999; i++) {
+						sprintf(current_filename, "M_%03d.CSV", i);
+						FRESULT res = f_stat(current_filename, &fno);
 
-					// Рисуем Углы только если они изменились
-					if (fabsf(cur_x - old_x) > 0.005f) {
-						sprintf(str_lcd, "X: %+7.3f ", cur_x);
-						ILI9341_WriteString(10, 15, str_lcd, Font_16x26, 0xFFFF, 0x0000);
-						old_x = cur_x;
-					}
-					if (fabsf(cur_y - old_y) > 0.005f) {
-						sprintf(str_lcd, "Y: %+7.3f ", cur_y);
-						ILI9341_WriteString(10, 45, str_lcd, Font_16x26, 0xFFFF, 0x0000);
-						old_y = cur_y;
-					}
-
-					// Часы и дата
-					sprintf(str_lcd, "%02d:%02d:%02d", current_time.hours, current_time.minutes, current_time.seconds);
-					ILI9341_WriteString(220, 5, str_lcd, Font_11x18, 0xFFFF, 0x0000);
-					sprintf(str_lcd, "%02d.%02d.20%02d", current_time.date, current_time.month, current_time.year);
-					ILI9341_WriteString(220, 25, str_lcd, Font_7x10, 0x07FF, 0x0000);
-
-					// Индикатор записи (STOP / REC)
-					if (is_recording) {
-						if ((HAL_GetTick() / 500) % 2) {
-							ILI9341_WriteString(220, 40, " REC ", Font_11x18, 0xF800, 0x0000);
-						} else {
-							ILI9341_WriteString(220, 40, "     ", Font_11x18, 0xFFFF, 0x0000);
+						// ПРАВИЛЬНОЕ УСЛОВИЕ: только если карта ответила "Файл не найден"
+						if (res == FR_NO_FILE) {
+							file_number = i; // Нашли свободное имя, карта официально готова!
+							break;
 						}
-					} else {
-						ILI9341_WriteString(220, 40, " STOP", Font_11x18, 0x7BEF, 0x0000);
 					}
+				}
+			}
+			sd_check_timer = HAL_GetTick();
+		}
 
-					// Меню
-					sprintf(str_lcd, " Freq:  %02d Hz   ", log_freq_hz);
-					ILI9341_WriteString(60, 100, str_lcd, Font_11x18, 0xFFFF, 0x0000);
-					sprintf(str_lcd, " Alpha: %.2f    ", ema_alpha);
-					ILI9341_WriteString(60, 130, str_lcd, Font_11x18, 0xFFFF, 0x0000);
-					ILI9341_WriteString(60, 160, " [ SET ZERO ]   ", Font_11x18, 0xFFFF, 0x0000);
+		// 6. ОБНОВЛЕНИЕ ЭКРАНА (Новый просторный дизайн)
+		if (HAL_GetTick() - lcd_timer >= 50) {
+			static float old_x = -999.0f, old_y = -999.0f;
+			float cur_x = angle_x - offset_x;
+			float cur_y = angle_y - offset_y;
 
-					// Статус бар
-					sprintf(str_lcd, "BAT:%.1fV", battery_v);
-					ILI9341_WriteString(5, 215, str_lcd, Font_7x10, 0xFFFF, 0x0000);
+			// Углы (Сдвинуты в левую часть, много свободного места)
+			if (fabsf(cur_x - old_x) > 0.005f) {
+				sprintf(str_lcd, "X: %+7.3f ", cur_x);
+				ILI9341_WriteString(10, 40, str_lcd, Font_16x26, 0xFFFF,
+						0x0000);
+				old_x = cur_x;
+			}
+			if (fabsf(cur_y - old_y) > 0.005f) {
+				sprintf(str_lcd, "Y: %+7.3f ", cur_y);
+				ILI9341_WriteString(10, 80, str_lcd, Font_16x26, 0xFFFF,
+						0x0000);
+				old_y = cur_y;
+			}
 
-					// Проверка наличия SD карты
-					if (file_number > 0) {
-						sprintf(str_lcd, "FILE:%s", current_filename);
-						ILI9341_WriteString(90, 215, str_lcd, Font_7x10, 0xFFE0, 0x0000);
-					} else {
-						ILI9341_WriteString(90, 215, "SD ERROR!", Font_7x10, 0xF800, 0x0000);
-					}
+			// Часы и дата
+			sprintf(str_lcd, "%02d:%02d:%02d", current_time.hours,
+					current_time.minutes, current_time.seconds);
+			ILI9341_WriteString(220, 5, str_lcd, Font_11x18, 0xFFFF, 0x0000);
+			sprintf(str_lcd, "%02d.%02d.20%02d", current_time.date,
+					current_time.month, current_time.year);
+			ILI9341_WriteString(220, 25, str_lcd, Font_7x10, 0x07FF, 0x0000);
 
-					if (is_stable) {
-						ILI9341_WriteString(240, 215, " READY ", Font_7x10, 0x07E0, 0x0000);
-					} else {
-						ILI9341_WriteString(240, 215, " WAIT..", Font_7x10, 0xF800, 0x0000);
-					}
+			// Индикатор записи
+			if (is_recording) {
+				if ((HAL_GetTick() / 500) % 2) {
+					ILI9341_WriteString(240, 45, "REC ", Font_11x18, 0xF800,
+							0x0000);
+				} else {
+					ILI9341_WriteString(240, 45, "    ", Font_11x18, 0xFFFF,
+							0x0000);
+				}
+			} else {
+				ILI9341_WriteString(240, 45, "STOP", Font_11x18, 0x7BEF,
+						0x0000);
+			}
 
-					lcd_timer = HAL_GetTick();
-				} // <--- СКОБКА ТАЙМЕРА ЗАКРЫВАЕТСЯ ТОЛЬКО ЗДЕСЬ
+			// Меню
+			sprintf(str_lcd, " Freq:%02d ", log_freq_hz);
+			ILI9341_WriteString(20, 148, str_lcd, Font_11x18, 0xFFFF, 0x0000);
+
+			sprintf(str_lcd, " Alp:%.2f ", ema_alpha);
+			ILI9341_WriteString(170, 148, str_lcd, Font_11x18, 0xFFFF, 0x0000);
+
+			ILI9341_WriteString(80, 188, " [ SET ZERO ] ", Font_11x18, 0xFFFF,
+					0x0000);
+
+			// Статус бар (Самая нижняя строка)
+			sprintf(str_lcd, "BAT:%.1fV", battery_v);
+			ILI9341_WriteString(5, 220, str_lcd, Font_7x10, 0xFFFF, 0x0000);
+
+			// Отрисовка нижней панели статуса SD
+			if (file_number > 0) {
+				char status_str[30];
+				sprintf(status_str, "FILE:%s   ", current_filename);
+				ILI9341_WriteString(70, 220, status_str, Font_7x10, 0xFFE0,
+						0x0000);
+			} else {
+				ILI9341_WriteString(70, 220, "NO SD CARD       ", Font_7x10,
+						0xF800, 0x0000);
+			}
+
+			if (is_stable) {
+				ILI9341_WriteString(240, 220, " READY ", Font_7x10, 0x07E0,
+						0x0000);
+			} else {
+				ILI9341_WriteString(240, 220, " WAIT..", Font_7x10, 0xF800,
+						0x0000);
+			}
+
+			lcd_timer = HAL_GetTick();
+		}
+
 		/* USER CODE END WHILE */
 
 		/* USER CODE BEGIN 3 */
@@ -566,7 +642,7 @@ static void MX_SPI1_Init(void) {
 	hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
 	hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
 	hspi1.Init.NSS = SPI_NSS_SOFT;
-	hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
+	hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
 	hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
 	hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
 	hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -577,6 +653,42 @@ static void MX_SPI1_Init(void) {
 	/* USER CODE BEGIN SPI1_Init 2 */
 
 	/* USER CODE END SPI1_Init 2 */
+
+}
+
+/**
+ * @brief SPI2 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_SPI2_Init(void) {
+
+	/* USER CODE BEGIN SPI2_Init 0 */
+
+	/* USER CODE END SPI2_Init 0 */
+
+	/* USER CODE BEGIN SPI2_Init 1 */
+
+	/* USER CODE END SPI2_Init 1 */
+	/* SPI2 parameter configuration*/
+	hspi2.Instance = SPI2;
+	hspi2.Init.Mode = SPI_MODE_MASTER;
+	hspi2.Init.Direction = SPI_DIRECTION_2LINES;
+	hspi2.Init.DataSize = SPI_DATASIZE_8BIT;
+	hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
+	hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
+	hspi2.Init.NSS = SPI_NSS_SOFT;
+	hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
+	hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
+	hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
+	hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+	hspi2.Init.CRCPolynomial = 10;
+	if (HAL_SPI_Init(&hspi2) != HAL_OK) {
+		Error_Handler();
+	}
+	/* USER CODE BEGIN SPI2_Init 2 */
+
+	/* USER CODE END SPI2_Init 2 */
 
 }
 
