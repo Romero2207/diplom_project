@@ -1,0 +1,129 @@
+#include "ili9341.h"
+
+// Подключаем внешний SPI, который настроил CubeMX
+extern SPI_HandleTypeDef hspi1;
+
+// Макросы для управления пином CS (Выбор чипа)
+#define ILI9341_Select()   HAL_GPIO_WritePin(LCD_CS_GPIO_Port, LCD_CS_Pin, GPIO_PIN_RESET)
+#define ILI9341_Unselect() HAL_GPIO_WritePin(LCD_CS_GPIO_Port, LCD_CS_Pin, GPIO_PIN_SET)
+
+// Отправить команду
+static void ILI9341_SendCommand(uint8_t cmd) {
+    HAL_GPIO_WritePin(LCD_DC_GPIO_Port, LCD_DC_Pin, GPIO_PIN_RESET); // DC = 0 для команд
+    ILI9341_Select();
+    HAL_SPI_Transmit(&hspi1, &cmd, 1, HAL_MAX_DELAY);
+    ILI9341_Unselect();
+}
+
+// Отправить данные
+static void ILI9341_SendData(uint8_t data) {
+    HAL_GPIO_WritePin(LCD_DC_GPIO_Port, LCD_DC_Pin, GPIO_PIN_SET); // DC = 1 для данных
+    ILI9341_Select();
+    HAL_SPI_Transmit(&hspi1, &data, 1, HAL_MAX_DELAY);
+    ILI9341_Unselect();
+}
+
+// Инициализировать дисплей (полная рабочая последовательность)
+void ILI9341_Init(void) {
+    // Аппаратный сброс
+    HAL_GPIO_WritePin(LCD_RST_GPIO_Port, LCD_RST_Pin, GPIO_PIN_RESET);
+    HAL_Delay(50);
+    HAL_GPIO_WritePin(LCD_RST_GPIO_Port, LCD_RST_Pin, GPIO_PIN_SET);
+    HAL_Delay(50);
+
+    ILI9341_SendCommand(0x01); // Software Reset
+    HAL_Delay(1000);
+
+    // --- ОБЯЗАТЕЛЬНЫЕ КОМАНДЫ НАСТРОЙКИ МАТРИЦЫ ---
+    ILI9341_SendCommand(0xC0); // Power control 1
+    ILI9341_SendData(0x23);
+    ILI9341_SendCommand(0xC1); // Power control 2
+    ILI9341_SendData(0x10);
+    ILI9341_SendCommand(0xC5); // VCOM control 1
+    ILI9341_SendData(0x3E); ILI9341_SendData(0x28);
+    ILI9341_SendCommand(0xC7); // VCOM control 2
+    ILI9341_SendData(0x86);
+    ILI9341_SendCommand(0x36); // Memory Access Control
+    ILI9341_SendData(0x48);    // Ориентация экрана (Portrait)
+    // ----------------------------------------------
+
+    ILI9341_SendCommand(0x3A); // Pixel Format Set
+    ILI9341_SendData(0x55);    // 16-bit color
+
+    ILI9341_SendCommand(0x11); // Sleep Out
+    HAL_Delay(120);
+
+    ILI9341_SendCommand(0x29); // Display ON
+    HAL_Delay(120);
+}
+// Установить ориентацию экрана
+void ILI9341_SetRotation(uint8_t rotation) {
+    ILI9341_SendCommand(0x36); // Memory Access Control
+    if(rotation == 1) {
+        ILI9341_SendData(0x28); // Landscape
+    } else {
+        ILI9341_SendData(0x48); // Portrait
+    }
+}
+
+// Задать окно для отрисовки
+static void ILI9341_SetAddressWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
+    ILI9341_SendCommand(0x2A); // Column Address Set
+    ILI9341_SendData(x0 >> 8); ILI9341_SendData(x0 & 0xFF);
+    ILI9341_SendData(x1 >> 8); ILI9341_SendData(x1 & 0xFF);
+
+    ILI9341_SendCommand(0x2B); // Page Address Set
+    ILI9341_SendData(y0 >> 8); ILI9341_SendData(y0 & 0xFF);
+    ILI9341_SendData(y1 >> 8); ILI9341_SendData(y1 & 0xFF);
+
+    ILI9341_SendCommand(0x2C); // Memory Write
+}
+
+// Нарисовать один пиксель
+void ILI9341_DrawPixel(uint16_t x, uint16_t y, uint16_t color) {
+    ILI9341_SetAddressWindow(x, y, x, y);
+    HAL_GPIO_WritePin(LCD_DC_GPIO_Port, LCD_DC_Pin, GPIO_PIN_SET);
+    ILI9341_Select();
+    uint8_t data[2] = {color >> 8, color & 0xFF};
+    HAL_SPI_Transmit(&hspi1, data, 2, HAL_MAX_DELAY);
+    ILI9341_Unselect();
+}
+
+// Залить весь экран одним цветом (Очистка)
+void ILI9341_FillScreen(uint16_t color) {
+    ILI9341_SetAddressWindow(0, 0, 319, 239);
+    HAL_GPIO_WritePin(LCD_DC_GPIO_Port, LCD_DC_Pin, GPIO_PIN_SET);
+    ILI9341_Select();
+    uint8_t data[2] = {color >> 8, color & 0xFF};
+    for(uint32_t i = 0; i < 320 * 240; i++) {
+        HAL_SPI_Transmit(&hspi1, data, 2, HAL_MAX_DELAY);
+    }
+    ILI9341_Unselect();
+}
+
+// Нарисовать символ
+void ILI9341_WriteChar(uint16_t x, uint16_t y, char ch, FontDef font, uint16_t color, uint16_t bgcolor) {
+    uint32_t i, b, j;
+    // Проверка на выход за границы массива шрифта
+    if (ch < 32 || ch > 126) return;
+
+    for(i = 0; i < font.height; i++) {
+        b = font.data[(ch - 32) * font.height + i];
+        for(j = 0; j < font.width; j++) {
+            if((b << j) & 0x8000) {
+                ILI9341_DrawPixel(x + j, y + i, color);
+            } else {
+                ILI9341_DrawPixel(x + j, y + i, bgcolor);
+            }
+        }
+    }
+}
+
+// Нарисовать строку текста
+void ILI9341_WriteString(uint16_t x, uint16_t y, const char* str, FontDef font, uint16_t color, uint16_t bgcolor) {
+    while(*str) {
+        ILI9341_WriteChar(x, y, *str, font, color, bgcolor);
+        x += font.width;
+        str++;
+    }
+}

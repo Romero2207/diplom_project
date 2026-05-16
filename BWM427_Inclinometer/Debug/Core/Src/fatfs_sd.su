@@ -1,0 +1,8 @@
+../Core/Src/fatfs_sd.c:17:13:SPI_TxByte	16	static
+../Core/Src/fatfs_sd.c:21:13:SPI_RxByte	16	static
+../Core/Src/fatfs_sd.c:27:13:SD_SendCmd	24	static
+../Core/Src/fatfs_sd.c:52:9:SD_disk_initialize	40	static
+../Core/Src/fatfs_sd.c:79:9:SD_disk_status	16	static
+../Core/Src/fatfs_sd.c:83:9:SD_disk_read	32	static
+../Core/Src/fatfs_sd.c:106:9:SD_disk_write	32	static
+../Core/Src/fatfs_sd.c:128:9:SD_disk_ioctl	24	static
