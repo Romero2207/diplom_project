@@ -1,8 +1,8 @@
 fatfs_sd.c:17:13:SPI_TxByte	1
 fatfs_sd.c:22:13:SPI_RxByte	1
 fatfs_sd.c:29:13:SD_SendCmd	7
-fatfs_sd.c:54:9:SD_disk_initialize	15
-fatfs_sd.c:81:9:SD_disk_status	1
-fatfs_sd.c:85:9:SD_disk_read	10
-fatfs_sd.c:116:9:SD_disk_write	10
-fatfs_sd.c:149:9:SD_disk_ioctl	8
+fatfs_sd.c:59:9:SD_disk_initialize	15
+fatfs_sd.c:98:9:SD_disk_status	1
+fatfs_sd.c:102:9:SD_disk_read	9
+fatfs_sd.c:136:9:SD_disk_write	10
+fatfs_sd.c:177:9:SD_disk_ioctl	7

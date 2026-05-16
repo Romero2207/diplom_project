@@ -383,27 +383,21 @@ int main(void) {
 		static uint32_t sd_check_timer = 0;
 		if (!is_recording && (HAL_GetTick() - sd_check_timer >= 1000)) { // Проверяем каждую секунду
 			if (file_number > 0) {
-				// 1. Флешка БЫЛА. Проверяем её наличие (пытаемся прочесть несуществующий файл)
-				FILINFO fno;
-				FRESULT res = f_stat("CHECK.TXT", &fno);
-				if (res == FR_NOT_READY || res == FR_DISK_ERR) {
-					file_number = 0;  // Карту точно вытащили! Сбрасываем статус
-					f_mount(NULL, "", 0); // Жестко размонтируем сессию
+				// 1. Флешка БЫЛА. Пытаемся прочитать корень, чтобы узнать, на месте ли она.
+				DIR dir;
+				if (f_opendir(&dir, "/") != FR_OK) {
+					file_number = 0;      // Карту вытащили! Сбрасываем статус.
+					f_mount(NULL, "", 0); // Жестко отмонтируем старую сессию FatFs
 				}
 			} else {
-				// 2. Флешки НЕ БЫЛО. Полностью сбрасываем старую сессию и монтируем заново
-				f_mount(NULL, "", 0);
-				HAL_Delay(10);
+				// 2. Флешки НЕ БЫЛО. Пытаемся её инициализировать.
 				if (f_mount(&fs, "", 1) == FR_OK) {
+					// Карту вставили! Ищем свободное имя для нового файла.
 					FILINFO fno;
-					// Ищем свободное имя для нового файла
 					for (uint16_t i = 1; i <= 999; i++) {
 						sprintf(current_filename, "M_%03d.CSV", i);
-						FRESULT res = f_stat(current_filename, &fno);
-
-						// ПРАВИЛЬНОЕ УСЛОВИЕ: только если карта ответила "Файл не найден"
-						if (res == FR_NO_FILE) {
-							file_number = i; // Нашли свободное имя, карта официально готова!
+						if (f_stat(current_filename, &fno) != FR_OK) {
+							file_number = i; // Нашли! Возвращаем систему в боевую готовность
 							break;
 						}
 					}
