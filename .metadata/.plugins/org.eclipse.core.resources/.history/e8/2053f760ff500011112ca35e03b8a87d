@@ -230,7 +230,7 @@ int main(void)
 
 	// Умная настройка времени (сработает только если часы сброшены)
 	DS3231_GetTime(&current_time);
-	if (current_time.year < 26) {
+	if (current_time.year < 81) {
 		// Если год меньше 26, прошиваем время (например: 11:11:00, 11 сентября 01 года)
 		DS3231_SetFullTime(11, 49, 00, 16, 5, 26);
 	}
@@ -348,7 +348,7 @@ int main(void)
 						angle_y, offset_x, offset_y, calc_x, calc_y, battery_v);
 				UINT bw;
 				f_write(&fil, buf, strlen(buf), &bw);
-				f_sync(&fil);
+				//f_sync(&fil);
 			}
 			sensor_timer = HAL_GetTick();
 		}
@@ -924,7 +924,7 @@ void BWM427_ReadAngles(void) {
 	HAL_GPIO_WritePin(RS485_RE_PORT, RS485_RE_PIN, GPIO_PIN_RESET);
 
 // Принять ответ (9 байт)
-	if (HAL_UART_Receive(&huart1, rx_buffer, 9, 15) == HAL_OK) {
+	if (HAL_UART_Receive(&huart1, rx_buffer, 9, 50) == HAL_OK) {
 		// Проверить контрольную сумму ответа
 		uint16_t received_crc = (rx_buffer[8] << 8) | rx_buffer[7];
 		if (Modbus_CRC16(rx_buffer, 7) == received_crc) {
