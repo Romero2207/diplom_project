@@ -296,7 +296,7 @@ int main(void) {
 		// 3. УПРАВЛЕНИЕ ЗАПИСЬЮ (Тумблер на PA3 - 0 когда включен, 1 когда выключен)
 		static uint8_t recording_blocked = 0; // Флаг блокировки авто-старта после сбоя
 		uint8_t current_sw = HAL_GPIO_ReadPin(SW_RECORD_GPIO_Port,
-		SW_RECORD_Pin);
+				SW_RECORD_Pin);
 
 		if (current_sw == 0) { // Тумблер в положении ЗАПИСЬ (замкнут на GND)
 			// Начинаем запись только если не пишем, нет блокировки ошибки и карта готова
@@ -466,11 +466,15 @@ int main(void) {
 			if (file_number > 0) {
 				char status_str[30];
 				sprintf(status_str, "FILE:%s   ", current_filename);
-				ILI9341_WriteString(70, 220, status_str, Font_7x10, 0xFFE0,
-						0x0000);
+				ILI9341_WriteString(70, 300, status_str, Font_7x10, 0xFFE0,
+						0x0000); // Желтый цвет
+				ILI9341_WriteString(200, 300, "READY   ", Font_7x10, 0x07E0,
+						0x0000); // Зеленый цвет
 			} else {
-				ILI9341_WriteString(70, 220, "NO SD CARD       ", Font_7x10,
-						0xF800, 0x0000);
+				ILI9341_WriteString(70, 300, "NO SD CARD       ", Font_7x10,
+						0xF800, 0x0000); // Красный
+				ILI9341_WriteString(200, 300, "ERROR   ", Font_7x10, 0xF800,
+						0x0000); // Красный
 			}
 
 			if (is_stable) {

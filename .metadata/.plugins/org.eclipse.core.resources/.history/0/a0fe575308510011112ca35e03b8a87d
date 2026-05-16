@@ -235,6 +235,7 @@ int main(void) {
 	}
 
 	static uint8_t last_sw_state = 0; // Сохранить прошлое состояние тумблера
+
 	while (1) {
 		char str_lcd[64];
 		DS3231_GetTime(&current_time); // Получаем время с часов
@@ -271,7 +272,7 @@ int main(void) {
 			}
 		}
 
-		// 2. МГНОВЕННАЯ ОТРИСОВКА РАМКИ (Эстетичная сетка)
+		// 2. МГНОВЕННАЯ ОТР�?СОВКА РАМК�? (Эстетичная сетка)
 		if (menu_index != prev_menu_index || edit_mode != prev_edit_mode) {
 			// Координаты для 3 пунктов: 0-Freq, 1-Alpha, 2-Zero
 			const uint16_t frame_x[3] = { 15, 165, 75 };
@@ -293,27 +294,21 @@ int main(void) {
 			prev_edit_mode = edit_mode;
 		}
 
-		// 3. УПРАВЛЕНИЕ ЗАПИСЬЮ (Тумблер на PA3 - 0 когда включен, 1 когда выключен)
-		static uint8_t recording_blocked = 0; // Флаг блокировки авто-старта после сбоя
+		// 3. УПРАВЛЕН�?Е ЗАП�?СЬЮ (Тумблер на PA3 - срабатывает при замыкании на GND)
 		uint8_t current_sw = HAL_GPIO_ReadPin(SW_RECORD_GPIO_Port,
 		SW_RECORD_Pin);
 
-		if (current_sw == 0) { // Тумблер в положении ЗАПИСЬ (замкнут на GND)
-			// Начинаем запись только если не пишем, нет блокировки ошибки и карта готова
-			if (!is_recording && !recording_blocked && file_number > 0) {
-				if (f_open(&fil, current_filename, FA_CREATE_ALWAYS | FA_WRITE)
-						== FR_OK) {
-					record_start_ms = HAL_GetTick();
-					char header[] =
-							"Time,RawX,RawY,OffsetX,OffsetY,CalcX,CalcY,BatV\n";
-					UINT bw;
-					f_write(&fil, header, strlen(header), &bw);
-					is_recording = 1;
-				}
+		if (current_sw == 0 && last_sw_state == 1) { // Замкнули на землю
+			if (f_open(&fil, current_filename, FA_CREATE_ALWAYS | FA_WRITE)
+					== FR_OK) {
+				record_start_ms = HAL_GetTick();
+				char header[] =
+						"Time,RawX,RawY,OffsetX,OffsetY,CalcX,CalcY,BatV\n";
+				UINT bw;
+				f_write(&fil, header, strlen(header), &bw);
+				is_recording = 1;
 			}
-		} else { // Тумблер в положении СТОП (разомкнут, подтянут к 1)
-			recording_blocked = 0; // Перевели тумблер вниз – полностью сняли блокировку сбоя!
-
+		} else if (current_sw == 1 && last_sw_state == 0) { // Разомкнули
 			if (is_recording) {
 				f_close(&fil);
 				is_recording = 0;
@@ -323,7 +318,7 @@ int main(void) {
 		}
 		last_sw_state = current_sw;
 
-		// 4. ОПРОС ДАТЧИКА И РАСЧЕТ СТАБИЛЬНОСТИ
+		// 4. ОПРОС ДАТЧ�?КА �? РАСЧЕТ СТАБ�?ЛЬНОСТ�?
 		static uint32_t sensor_timer = 0;
 		if (HAL_GetTick() - sensor_timer >= log_delay_ms) {
 			BWM427_ReadAngles();
@@ -343,31 +338,30 @@ int main(void) {
 			is_stable = (max_v - min_v < 0.05f) ? 1 : 0;
 
 			if (is_recording) {
-				char buf[128];
-				sprintf(buf,
-						"%02d.%02d.%02d %02d:%02d:%02d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f\n",
-						current_time.date, current_time.month,
-						current_time.year, current_time.hours,
-						current_time.minutes, current_time.seconds, angle_x,
-						angle_y, offset_x, offset_y, calc_x, calc_y, battery_v);
+			    char buf[128];
+			    sprintf(buf,
+			            "%02d.%02d.%02d %02d:%02d:%02d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f\n",
+			            current_time.date, current_time.month,
+			            current_time.year, current_time.hours,
+			            current_time.minutes, current_time.seconds, angle_x,
+			            angle_y, offset_x, offset_y, calc_x, calc_y, battery_v);
 
-				UINT bw;
-				FRESULT w_res = f_write(&fil, buf, strlen(buf), &bw);
-				f_sync(&fil); // Обязательно синхронизируем данные!
+			    UINT bw;
+			    FRESULT w_res = f_write(&fil, buf, strlen(buf), &bw);
+			    f_sync(&fil); // Обязательно синхронизируем данные!
 
-				// Если произошла ошибка (флешку выдернули)
-				if (w_res != FR_OK || bw == 0) {
-					f_close(&fil);         // Закрываем дескриптор
-					is_recording = 0;      // Сбрасываем флаг записи
-					file_number = 0; // Сбрасываем номер файла (включаем ошибку)
-					sd_err_code = w_res;   // Запоминаем код ошибки для экрана
-					recording_blocked = 1; // Защита от авто-старта до перещелкивания тумблера
-				}
+			    // Если произошла ошибка (флешку выдернули)
+			    if (w_res != FR_OK || bw == 0) {
+			        f_close(&fil);         // Закрываем дескриптор
+			        is_recording = 0;      // Сбрасываем флаг записи
+			        file_number = 0;       // Сбрасываем номер файла (включаем ошибку)
+			        sd_err_code = w_res;   // Запоминаем код ошибки для экрана
+			    }
 			}
 			sensor_timer = HAL_GetTick();
 		}
 
-		// 5. МОНИТОРИНГ БАТАРЕИ (Новый коэффициент для 10к и 3.3к)
+		// 5. МОН�?ТОР�?НГ БАТАРЕ�? (Новый коэффициент для 10к и 3.3к)
 		static uint32_t bat_timer = 0;
 		if (HAL_GetTick() - bat_timer >= 1000) {
 			if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK) {
@@ -378,35 +372,34 @@ int main(void) {
 			HAL_ADC_Start(&hadc1);
 			bat_timer = HAL_GetTick();
 		}
-
 		// === ПРОВЕРКА НАЛИЧИЯ SD КАРТЫ (ГОРЯЧАЯ ЗАМЕНА) ===
 		static uint32_t sd_check_timer = 0;
-		if (!is_recording && (HAL_GetTick() - sd_check_timer >= 1000)) { // Проверяем каждую секунду
-			if (file_number > 0) {
-				// 1. Флешка БЫЛА. Пытаемся прочитать корень, чтобы узнать, на месте ли она.
-				DIR dir;
-				if (f_opendir(&dir, "/") != FR_OK) {
-					file_number = 0;      // Карту вытащили! Сбрасываем статус.
-					f_mount(NULL, "", 0); // Жестко отмонтируем старую сессию FatFs
-				}
-			} else {
-				// 2. Флешки НЕ БЫЛО. Пытаемся её инициализировать.
-				if (f_mount(&fs, "", 1) == FR_OK) {
-					// Карту вставили! Ищем свободное имя для нового файла.
-					FILINFO fno;
-					for (uint16_t i = 1; i <= 999; i++) {
-						sprintf(current_filename, "M_%03d.CSV", i);
-						if (f_stat(current_filename, &fno) != FR_OK) {
-							file_number = i; // Нашли! Возвращаем систему в боевую готовность
-							break;
-						}
-					}
-				}
-			}
-			sd_check_timer = HAL_GetTick();
+		if (!is_recording && (HAL_GetTick() - sd_check_timer >= 1500)) { // Проверяем раз в 1.5 секунды
+		    DIR dir;
+		    if (file_number > 0) {
+		        // Пытаемся прочитать корень. Если флешки нет - выдаст ошибку
+		        if (f_opendir(&dir, "/") != FR_OK) {
+		            file_number = 0; // Сбрасываем статус (вызовет надпись SD ERR)
+		            sd_err_code = 3; // FR_NOT_READY
+		        }
+		    } else {
+		        // Если флешки не было (file_number == 0), пытаемся примонтировать её заново
+		        f_mount(NULL, "", 0); // Отмонтируем старую сессию
+		        HAL_Delay(10);
+		        if (f_mount(&fs, "", 1) == FR_OK) { // Если флешку вставили
+		            FILINFO fno;
+		            for (uint16_t i = 1; i <= 999; i++) {
+		                sprintf(current_filename, "M_%03d.CSV", i);
+		                if (f_stat(current_filename, &fno) != FR_OK) {
+		                    file_number = i; // Нашли свободное имя, возвращаем систему в норму
+		                    break;
+		                }
+		            }
+		        }
+		    }
+		    sd_check_timer = HAL_GetTick();
 		}
-
-		// 6. ОБНОВЛЕНИЕ ЭКРАНА (Новый просторный дизайн)
+		// 6. ОБНОВЛЕН�?Е ЭКРАНА (Новый просторный дизайн)
 		if (HAL_GetTick() - lcd_timer >= 50) {
 			static float old_x = -999.0f, old_y = -999.0f;
 			float cur_x = angle_x - offset_x;
@@ -434,7 +427,7 @@ int main(void) {
 					current_time.month, current_time.year);
 			ILI9341_WriteString(220, 25, str_lcd, Font_7x10, 0x07FF, 0x0000);
 
-			// Индикатор записи
+			// �?ндикатор записи (Под датой справа)
 			if (is_recording) {
 				if ((HAL_GetTick() / 500) % 2) {
 					ILI9341_WriteString(240, 45, "REC ", Font_11x18, 0xF800,
@@ -462,15 +455,16 @@ int main(void) {
 			sprintf(str_lcd, "BAT:%.1fV", battery_v);
 			ILI9341_WriteString(5, 220, str_lcd, Font_7x10, 0xFFFF, 0x0000);
 
-			// Отрисовка нижней панели статуса SD
+			// Проверка наличия SD карты
 			if (file_number > 0) {
-				char status_str[30];
-				sprintf(status_str, "FILE:%s   ", current_filename);
-				ILI9341_WriteString(70, 220, status_str, Font_7x10, 0xFFE0,
+				sprintf(str_lcd, "FILE:%s", current_filename);
+				ILI9341_WriteString(90, 220, str_lcd, Font_7x10, 0xFFE0,
 						0x0000);
 			} else {
-				ILI9341_WriteString(70, 220, "NO SD CARD       ", Font_7x10,
-						0xF800, 0x0000);
+				// Выводим код ошибки на экран
+				sprintf(str_lcd, "SD ERR:%d", sd_err_code);
+				ILI9341_WriteString(90, 220, str_lcd, Font_7x10, 0xF800,
+						0x0000);
 			}
 
 			if (is_stable) {
@@ -483,7 +477,6 @@ int main(void) {
 
 			lcd_timer = HAL_GetTick();
 		}
-
 		/* USER CODE END WHILE */
 
 		/* USER CODE BEGIN 3 */
