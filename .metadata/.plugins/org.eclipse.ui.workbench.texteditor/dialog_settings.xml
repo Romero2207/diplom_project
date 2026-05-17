@@ -6,8 +6,11 @@
 		<item key="wholeword" value="false"/>
 		<item key="incremental" value="false"/>
 		<item key="isRegEx" value="false"/>
-		<item key="selection" value="HAL_UART_Receive"/>
+		<item key="selection" value="if (file_number"/>
 		<list key="findhistory">
+			<item value="if (file_number"/>
+			<item value="Отрисовка статуса SD"/>
+			<item value="ПРОВЕРКА НАЛИЧИЯ SD"/>
 			<item value="HAL_UART_Receive"/>
 			<item value="if (is_recording) {"/>
 			<item value="ОБРАБОТКА ТУМБЛЕРА"/>
@@ -20,9 +23,6 @@
 			<item value=";"/>
 			<item value="SD_disk_read"/>
 			<item value="SPI_RxByte"/>
-			<item value="extern SPI_HandleTypeDef hspi1;"/>
-			<item value="int16_t diff ="/>
-			<item value="if (HAL_UART_Receive(&amp;huart1, rx_buffer, 9, 50) == HAL_OK)"/>
 		</list>
 		<list key="replacehistory">
 			<item value="hspi2"/>

@@ -85,7 +85,7 @@ uint16_t file_number = 0;
 uint8_t sd_err_code = 0; // Переменная для кода ошибки
 char current_filename[16];
 
-// --- Интерфейс и энкодер ---
+// --- �?нтерфейс и энкодер ---
 int16_t last_encoder_cnt = 0;
 int8_t menu_index = 0;
 uint8_t edit_mode = 0;
@@ -186,7 +186,7 @@ int main(void) {
 	// Выждать время для стабилизации питания и инициализации USB
 	HAL_Delay(1000);
 
-	// === ИНИЦИАЛИЗАЦИЯ ДИСПЛЕЯ ===
+	// === �?Н�?Ц�?АЛ�?ЗАЦ�?Я Д�?СПЛЕЯ ===
 	ILI9341_Init();
 	ILI9341_FillScreen(0x0000);
 
@@ -199,7 +199,7 @@ int main(void) {
 	// Считать начальное значение энкодера
 	last_encoder_cnt = __HAL_TIM_GET_COUNTER(&htim3);
 
-	// Инициализировать SD-карту
+	// �?нициализировать SD-карту
 	HAL_Delay(500);
 	FRESULT res = f_mount(&fs, "", 1);
 	if (res == FR_OK) {
@@ -215,11 +215,11 @@ int main(void) {
 		file_number = 0;
 		sd_err_code = res; // Сохраняем код ошибки!
 	}
-	// === ИНДИКАЦИЯ УСПЕШНОГО ЗАПУСКА ===
+	// === �?НД�?КАЦ�?Я УСПЕШНОГО ЗАПУСКА ===
 	for (int i = 0; i < 2; i++) {
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET); // Вкл
 		HAL_Delay(100);
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);   // Выкл
 		HAL_Delay(100);
 	}
 	/* USER CODE END 2 */
@@ -239,12 +239,12 @@ int main(void) {
 		char str_lcd[64];
 		DS3231_GetTime(&current_time); // Получаем время с часов
 
-		// 1. ОБРАБОТКА ЭНКОДЕРА (Защита от скачков и дребезка контактов)
+		// 1. ОБРАБОТКА ЭНКОДЕРА (Защита от скачков и деление на 4)
 		int16_t current_cnt = __HAL_TIM_GET_COUNTER(&htim3);
 		int16_t raw_diff = (int16_t) (current_cnt - last_encoder_cnt);
 
 		if (raw_diff >= 4 || raw_diff <= -4) {
-			int16_t diff = (raw_diff / 4);
+			int16_t diff = (raw_diff / 4); // Реверс и деление на 4
 			last_encoder_cnt = current_cnt;
 
 			if (edit_mode) {
@@ -299,6 +299,7 @@ int main(void) {
 		SW_RECORD_Pin);
 
 		if (current_sw == 0) { // Тумблер в положении ЗАПИСЬ (замкнут на GND)
+			// Начинаем запись только если не пишем, нет блокировки ошибки и карта готова
 			if (!is_recording && !recording_blocked && file_number > 0) {
 				if (f_open(&fil, current_filename, FA_CREATE_ALWAYS | FA_WRITE)
 						== FR_OK) {
@@ -311,7 +312,7 @@ int main(void) {
 				}
 			}
 		} else { // Тумблер в положении СТОП (разомкнут, подтянут к 1)
-			recording_blocked = 0;
+			recording_blocked = 0; // Перевели тумблер вниз – полностью сняли блокировку сбоя!
 
 			if (is_recording) {
 				f_close(&fil);
@@ -352,13 +353,13 @@ int main(void) {
 
 				UINT bw;
 				FRESULT w_res = f_write(&fil, buf, strlen(buf), &bw);
-				f_sync(&fil); // Синхронизация данных!
+				f_sync(&fil); // Обязательно синхронизируем данные!
 
 				// Если произошла ошибка (флешку выдернули)
 				if (w_res != FR_OK || bw == 0) {
 					f_close(&fil);         // Закрываем дескриптор
 					is_recording = 0;      // Сбрасываем флаг записи
-					file_number = 0; 	   // Сбрасываем номер файла (включаем ошибку)
+					file_number = 0; // Сбрасываем номер файла (включаем ошибку)
 					sd_err_code = w_res;   // Запоминаем код ошибки для экрана
 					recording_blocked = 1; // Защита от авто-старта до перещелкивания тумблера
 				}
@@ -392,18 +393,22 @@ int main(void) {
 				}
 			} else {
 				f_mount(NULL, "", 0); // Очищаем старую сессию
+
+				// Точечно очищаем аппаратный залип шины SPI (ошибку OVR), не отключая пины!
 				__HAL_SPI_CLEAR_OVRFLAG(&hspi2);
 
+				// Ждем целых полсекунды! Синие модули SD дают сильную просадку
+				// напряжения при горячем подключении, из-за чего карта виснет
 				HAL_Delay(500);
 
-				last_mount_res = f_mount(&fs, "", 1);
+				last_mount_res = f_mount(&fs, "", 1); // Пробуем жестко примонтировать
 
 				if (last_mount_res == FR_OK) {
 					FILINFO fno;
 					for (uint16_t i = 1; i <= 999; i++) {
 						sprintf(current_filename, "M_%03d.CSV", i);
 						if (f_stat(current_filename, &fno) == FR_NO_FILE) {
-							file_number = i;
+							file_number = i; // Ура, карта ожила!
 							break;
 						}
 					}
@@ -412,13 +417,13 @@ int main(void) {
 			sd_check_timer = HAL_GetTick();
 		}
 
-		// 6. ОБНОВЛЕНИЕ ЭКРАНА
+		// 6. ОБНОВЛЕНИЕ ЭКРАНА (Новый просторный дизайн)
 		if (HAL_GetTick() - lcd_timer >= 50) {
 			static float old_x = -999.0f, old_y = -999.0f;
 			float cur_x = angle_x - offset_x;
 			float cur_y = angle_y - offset_y;
 
-			// Углы
+			// Углы (Сдвинуты в левую часть, много свободного места)
 			if (fabsf(cur_x - old_x) > 0.005f) {
 				sprintf(str_lcd, "X: %+7.3f ", cur_x);
 				ILI9341_WriteString(10, 40, str_lcd, Font_16x26, 0xFFFF,
@@ -476,6 +481,7 @@ int main(void) {
 						0x0000);
 			} else {
 				char err_str[30];
+				// ТЕПЕРЬ ЭКРАН ПОКАЖЕТ КОД ОШИБКИ FATFS!
 				sprintf(err_str, "NO SD (E:%02d)   ", last_mount_res);
 				ILI9341_WriteString(70, 220, err_str, Font_7x10, 0xF800,
 						0x0000);
@@ -907,7 +913,7 @@ void DS3231_SetFullTime(uint8_t h, uint8_t m, uint8_t s, uint8_t d, uint8_t mo,
 	t[0] = Dec_To_BCD(s);
 	t[1] = Dec_To_BCD(m);
 	t[2] = Dec_To_BCD(h);
-	t[3] = 1; // День недели
+	t[3] = 1; // День недели (просто 1)
 	t[4] = Dec_To_BCD(d);
 	t[5] = Dec_To_BCD(mo);
 	t[6] = Dec_To_BCD(y);
@@ -963,7 +969,7 @@ void BWM427_ReadAngles(void) {
 		uint16_t received_crc = (rx_buffer[8] << 8) | rx_buffer[7];
 		if (Modbus_CRC16(rx_buffer, 7) == received_crc) {
 
-			// Извлечь сырые данные и перевести в градусы
+			// �?звлечь сырые данные и перевести в градусы
 			int16_t rx_x = (int16_t) ((rx_buffer[3] << 8) | rx_buffer[4]);
 			int16_t rx_y = (int16_t) ((rx_buffer[5] << 8) | rx_buffer[6]);
 
@@ -976,8 +982,9 @@ void BWM427_ReadAngles(void) {
 				ema_y = raw_angle_y;
 				ema_initialized = 1;
 			} else {
-				ema_x = apply_ema(ema_x, raw_angle_x, ema_alpha);
-				ema_y = apply_ema(ema_y, raw_angle_y, ema_alpha);
+				ema_x = apply_ema(ema_x, raw_angle_x, ema_alpha); // <--- ЗДЕСЬ
+				ema_y = apply_ema(ema_y, raw_angle_y, ema_alpha); // <--- �? ЗДЕСЬ
+			}
 			angle_x = ema_x;
 			angle_y = ema_y;
 			modbus_ready = 1;
@@ -1006,15 +1013,15 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 // Функция для рисования рамки вокруг выбранного пункта
 void My_DrawFrame(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
 		uint16_t color) {
-	uint8_t thickness = 2; // Толщина рамки в пикселях
+	uint8_t thickness = 2; // Толщина рамки в пикселях (можешь поставить 3)
 
 	for (uint8_t t = 0; t < thickness; t++) {
-		// Рисуем горизонтальные линии
+		// Рисуем горизонтальные линии (верх и низ)
 		for (uint16_t i = x; i < x + w; i++) {
 			ILI9341_DrawPixel(i, y + t, color);
 			ILI9341_DrawPixel(i, y + h - t, color);
 		}
-		// Рисуем вертикальные линии
+		// Рисуем вертикальные линии (лево и право)
 		for (uint16_t i = y; i < y + h; i++) {
 			ILI9341_DrawPixel(x + t, i, color);
 			ILI9341_DrawPixel(x + w - t, i, color);
