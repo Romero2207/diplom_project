@@ -363,6 +363,10 @@ int main(void) {
 					file_number = 0;
 					last_mount_res = w_res;
 					recording_blocked = 1;
+
+					// --- МЯГКАЯ ПЕРЕЗАГРУЗКА SPI (БЕЗ ОТКЛЮЧЕНИЯ ПИНОВ) ---
+					HAL_SPI_Abort(&hspi2); // Сбрасываем ошибки OVR и занятость шины
+					MX_SPI2_Init();       // Заново применяем настройки регистра
 				}
 			}
 			sensor_timer = HAL_GetTick();
@@ -395,16 +399,26 @@ int main(void) {
 					file_number = 0;
 					f_mount(NULL, "", 0);
 					last_mount_res = res;
+
+					// --- МЯГКАЯ ПЕРЕЗАГРУЗКА SPI ---
+					HAL_SPI_Abort(&hspi2);
+					MX_SPI2_Init();
 				}
 			} else {
-				// Очищаем мусор старой сессии
 				f_mount(NULL, "", 0);
 
-				// Пытаемся смонтировать жестко (FatFs сам разбудит карту!)
+				// --- МЯГКАЯ ПЕРЕЗАГРУЗКА SPI ПЕРЕД ОПРОСОМ ---
+				HAL_SPI_Abort(&hspi2);
+				MX_SPI2_Init();
+
+				// Жесткий сброс кэша драйвера fatfs_sd.c
+				disk_initialize(0);
+
+				// Пытаемся смонтировать жестко
 				last_mount_res = f_mount(&fs, "", 1);
 
 				if (last_mount_res == FR_OK) {
-					recording_blocked = 0; // Снимаем блокировку записи
+					recording_blocked = 0; // Снимаем блокировку тумблера записи
 
 					FILINFO fno;
 					for (uint16_t i = 1; i <= 999; i++) {

@@ -363,6 +363,10 @@ int main(void) {
 					file_number = 0;
 					last_mount_res = w_res;
 					recording_blocked = 1;
+
+					// --- ПЕРЕЗАГРУЗКА SPI ОТ АППАРАТНОГО ЗАВИСАНИЯ ---
+					HAL_SPI_DeInit(&hspi2);
+					MX_SPI2_Init();
 				}
 			}
 			sensor_timer = HAL_GetTick();
@@ -373,6 +377,7 @@ int main(void) {
 		if (HAL_GetTick() - bat_timer >= 1000) {
 			if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK) {
 				uint32_t adc_val = HAL_ADC_GetValue(&hadc1);
+				// Коэффициент 4.03f
 				battery_v = ((float) adc_val / 4095.0f) * 3.3f * 4.03f;
 			}
 			HAL_ADC_Start(&hadc1);
@@ -395,29 +400,40 @@ int main(void) {
 					file_number = 0;
 					f_mount(NULL, "", 0);
 					last_mount_res = res;
+
+					// --- ПЕРЕЗАГРУЗКА SPI ОТ АППАРАТНОГО ЗАВИСАНИЯ ---
+					HAL_SPI_DeInit(&hspi2);
+					MX_SPI2_Init();
 				}
-			} else {
-				// Очищаем мусор старой сессии
-				f_mount(NULL, "", 0);
+			} } else {
+		        f_mount(NULL, "", 0);
 
-				// Пытаемся смонтировать жестко (FatFs сам разбудит карту!)
-				last_mount_res = f_mount(&fs, "", 1);
+		        __HAL_RCC_SPI2_FORCE_RESET();
+		        HAL_Delay(2);
+		        __HAL_RCC_SPI2_RELEASE_RESET();
 
-				if (last_mount_res == FR_OK) {
-					recording_blocked = 0; // Снимаем блокировку записи
+		        HAL_SPI_DeInit(&hspi2);
+		        MX_SPI2_Init();
+		        HAL_Delay(10);
 
-					FILINFO fno;
-					for (uint16_t i = 1; i <= 999; i++) {
-						sprintf(current_filename, "M_%03d.CSV", i);
-						if (f_stat(current_filename, &fno) == FR_NO_FILE) {
-							file_number = i;
-							break;
-						}
-					}
-					if (file_number == 0)
-						file_number = 1;
-				}
-			}
+		        disk_initialize(0);
+
+		        last_mount_res = f_mount(&fs, "", 1);
+
+		        if (last_mount_res == FR_OK) {
+		            recording_blocked = 0;
+
+		            FILINFO fno;
+		            for (uint16_t i = 1; i <= 999; i++) {
+		                sprintf(current_filename, "M_%03d.CSV", i);
+		                if (f_stat(current_filename, &fno) == FR_NO_FILE) {
+		                    file_number = i;
+		                    break;
+		                }
+		            }
+		            if (file_number == 0) file_number = 1;
+		        }
+		    }
 		}
 
 		// 6. ОБНОВЛЕНИЕ ЭКРАНА
