@@ -355,18 +355,15 @@ int main(void) {
 				FRESULT w_res = f_write(&fil, buf, strlen(buf), &bw);
 				f_sync(&fil); // Синхронизация данных!
 
-				// Если произошла ошибка (флешку выдернули во время записи)
+				// Если произошла ошибка (флешку выдернули)
 				if (w_res != FR_OK || bw == 0) {
 					f_close(&fil);
 					f_mount(NULL, "", 0);
+					disk_initialize(0);
 					is_recording = 0;
 					file_number = 0;
-					last_mount_res = w_res;
+					last_mount_res = w_res; // Передаем ошибку в переменную для вывода на экран
 					recording_blocked = 1;
-
-					// --- ПЕРЕЗАГРУЗКА SPI ОТ АППАРАТНОГО ЗАВИСАНИЯ ---
-					HAL_SPI_DeInit(&hspi2);
-					MX_SPI2_Init();
 				}
 			}
 			sensor_timer = HAL_GetTick();
@@ -392,42 +389,52 @@ int main(void) {
 			sd_check_timer = HAL_GetTick();
 
 			if (file_number > 0) {
+				// Карта активна. Проверяем ее физическое присутствие быстрым запросом
 				FILINFO fno;
 				FRESULT res = f_stat("NONEXIST.TXT", &fno);
 
-				// Если карту выдернули в режиме ожидания
 				if (res != FR_OK && res != FR_NO_FILE) {
-					file_number = 0;
-					f_mount(NULL, "", 0);
+					file_number = 0;      // Карта пропала
+					f_mount(NULL, "", 0); // Размонтируем файловую систему FatFs
 					last_mount_res = res;
-
-					// --- ПЕРЕЗАГРУЗКА SPI ОТ АППАРАТНОГО ЗАВИСАНИЯ ---
-					HAL_SPI_DeInit(&hspi2);
-					MX_SPI2_Init();
 				}
 			} else {
-				// Карты нет. Очищаем мусор старой сессии
-				f_mount(NULL, "", 0);
+		        // Карты нет. Пытаемся её "нащупать".
+		        f_mount(NULL, "", 0); // Очищаем мусор старой сессии
 
-				// Пытаемся смонтировать жестко (драйвер сам отправит 80 тактов)
-				last_mount_res = f_mount(&fs, "", 1);
+		        // --- 1. СБРОС АППАРАТНОЙ ОШИБКИ SPI (OVR) ---
+		        // Перезагружаем интерфейс, чтобы сбросить зависание от дребезга контактов
+		        HAL_SPI_DeInit(&hspi2);
+		        HAL_Delay(5);
+		        MX_SPI2_Init();
+		        HAL_Delay(5);
 
-				if (last_mount_res == FR_OK) {
-					recording_blocked = 0; // <--- ВАЖНО: СНИМАЕМ БЛОКИРОВКУ ЗАПИСИ!
+		        // --- 2. ПЕРЕВОД КАРТЫ В SPI РЕЖИМ ---
+		        HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_SET); // Принудительно отпускаем шину
+		        uint8_t dummy_byte = 0xFF;
+		        for (int i = 0; i < 10; i++) {
+		            HAL_SPI_Transmit(&hspi2, &dummy_byte, 1, 10);
+		        }
+		        HAL_Delay(10);
 
-					// Ищем свободное имя для лога
-					FILINFO fno;
-					for (uint16_t i = 1; i <= 999; i++) {
-						sprintf(current_filename, "M_%03d.CSV", i);
-						if (f_stat(current_filename, &fno) == FR_NO_FILE) {
-							file_number = i;
-							break;
-						}
-					}
-					if (file_number == 0)
-						file_number = 1;
-				}
-			}
+		        // Пытаемся смонтировать жестко (флаг 1)
+		        last_mount_res = f_mount(&fs, "", 1);
+
+		        if (last_mount_res == FR_OK) {
+		            recording_blocked = 0; // Снимаем логическую блокировку (чтобы запись могла начаться)
+
+		            // Карта подхвачена! Ищем свободное имя для лога
+		            FILINFO fno;
+		            for (uint16_t i = 1; i <= 999; i++) {
+		                sprintf(current_filename, "M_%03d.CSV", i);
+		                if (f_stat(current_filename, &fno) == FR_NO_FILE) {
+		                    file_number = i;
+		                    break;
+		                }
+		            }
+		            if (file_number == 0) file_number = 1; // Защита, если на флешке 999 логов
+		        }
+		    }
 		}
 
 		// 6. ОБНОВЛЕНИЕ ЭКРАНА
