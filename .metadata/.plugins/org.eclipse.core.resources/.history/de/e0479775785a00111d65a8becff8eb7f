@@ -399,42 +399,44 @@ int main(void) {
 					last_mount_res = res;
 				}
 			} else {
-		        // Карты нет. Пытаемся её "нащупать".
-		        f_mount(NULL, "", 0); // Очищаем мусор старой сессии
+				// Карты нет. Пытаемся ее инициализировать с нуля
 
-		        // --- 1. СБРОС АППАРАТНОЙ ОШИБКИ SPI (OVR) ---
-		        // Перезагружаем интерфейс, чтобы сбросить зависание от дребезга контактов
-		        HAL_SPI_DeInit(&hspi2);
-		        HAL_Delay(5);
-		        MX_SPI2_Init();
-		        HAL_Delay(5);
+				// 1. Сбрасываем и очищаем шину SPI2 от мусора и дребезга контактов
+				f_mount(NULL, "", 0);
+				HAL_SPI_DeInit(&hspi2);
+				HAL_Delay(5);
+				MX_SPI2_Init();
+				HAL_Delay(5);
 
-		        // --- 2. ПЕРЕВОД КАРТЫ В SPI РЕЖИМ ---
-		        HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_SET); // Принудительно отпускаем шину
-		        uint8_t dummy_byte = 0xFF;
-		        for (int i = 0; i < 10; i++) {
-		            HAL_SPI_Transmit(&hspi2, &dummy_byte, 1, 10);
-		        }
-		        HAL_Delay(10);
+				// 2. "Пинок" для SD-карты. Переводим её из режима SDIO в режим SPI
+				// Поднимаем пин CS в HIGH и шлем 10 байт пустышек (80 чистых тактов SCK)
+				HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_SET);
+				uint8_t dummy_byte = 0xFF;
+				for (int i = 0; i < 10; i++) {
+					HAL_SPI_Transmit(&hspi2, &dummy_byte, 1, 10);
+				}
+				HAL_Delay(10); // Даем карте время осознать SPI-режим
 
-		        // Пытаемся смонтировать жестко (флаг 1)
-		        last_mount_res = f_mount(&fs, "", 1);
+				// 3. Пытаемся смонтировать карту жестким опросом (флаг 1)
+				last_mount_res = f_mount(&fs, "", 1);
 
-		        if (last_mount_res == FR_OK) {
-		            recording_blocked = 0; // Снимаем логическую блокировку (чтобы запись могла начаться)
+				if (last_mount_res == FR_OK) {
+					// Карта успешно подхвачена!
+					recording_blocked = 0; // Снимаем блокировку записи (Правка от GPT!)
 
-		            // Карта подхвачена! Ищем свободное имя для лога
-		            FILINFO fno;
-		            for (uint16_t i = 1; i <= 999; i++) {
-		                sprintf(current_filename, "M_%03d.CSV", i);
-		                if (f_stat(current_filename, &fno) == FR_NO_FILE) {
-		                    file_number = i;
-		                    break;
-		                }
-		            }
-		            if (file_number == 0) file_number = 1; // Защита, если на флешке 999 логов
-		        }
-		    }
+					// Ищем свободное имя для нового лог-файла
+					FILINFO fno;
+					for (uint16_t i = 1; i <= 999; i++) {
+						sprintf(current_filename, "M_%03d.CSV", i);
+						if (f_stat(current_filename, &fno) == FR_NO_FILE) {
+							file_number = i;
+							break;
+						}
+					}
+					if (file_number == 0)
+						file_number = 1; // Защита от переполнения
+				}
+			}
 		}
 
 		// 6. ОБНОВЛЕНИЕ ЭКРАНА

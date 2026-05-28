@@ -6,23 +6,23 @@
 		<item key="wholeword" value="false"/>
 		<item key="incremental" value="false"/>
 		<item key="isRegEx" value="false"/>
-		<item key="selection" value="if (file_number"/>
+		<item key="selection" value="f_mount(NULL, &quot;&quot;, 0);"/>
 		<list key="findhistory">
-			<item value="if (file_number"/>
-			<item value="Отрисовка статуса SD"/>
-			<item value="ПРОВЕРКА НАЛИЧИЯ SD"/>
-			<item value="HAL_UART_Receive"/>
-			<item value="if (is_recording) {"/>
-			<item value="ОБРАБОТКА ТУМБЛЕРА"/>
-			<item value="if (is_recording) "/>
-			<item value="if (is_recording) {&#x0A;    char buf[128];"/>
-			<item value="проверка нали"/>
-			<item value="if (is_recording) {&#x0A;"/>
-			<item value="while"/>
-			<item value="ОБНОВЛЕНИЕ ЭКРАНА"/>
-			<item value=";"/>
-			<item value="SD_disk_read"/>
-			<item value="SPI_RxByte"/>
+			<item value="f_mount(NULL, &quot;&quot;, 0);"/>
+			<item value="ПРОВЕРКА НАЛИЧИЯ"/>
+			<item value="last_sw_state = current_sw"/>
+			<item value="static FRESULT last_mount_res"/>
+			<item value="static uint8_t last_sw_state"/>
+			<item value="ПРОВЕРКА НАЛИЧИЯ SD КАРТЫ"/>
+			<item value="if (w_res != FR"/>
+			<item value="if (w_res != FR_OK || bw == 0) {&#x0A;  "/>
+			<item value="if (w_res != FR_OK || bw == 0) {&#x0A;    f"/>
+			<item value="if (w_res != FR_OK || bw == 0) {&#x0A;    f_close(&amp;fil);"/>
+			<item value="if (w_res != FR_OK || bw == 0) {&#x0A;    f_close(&amp;fil);4"/>
+			<item value="время"/>
+			<item value="врмя"/>
+			<item value="if (!ema_initialized)"/>
+			<item value="зация"/>
 		</list>
 		<list key="replacehistory">
 			<item value="hspi2"/>

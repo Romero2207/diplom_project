@@ -28,7 +28,6 @@
 #include <math.h>
 #include "ili9341.h"     // Подключить драйвер дисплея
 #include "fonts.h"       // Подключить шрифты дисплея
-#include "diskio.h"
 
 // Структура для модуля часов (RTC)
 typedef struct {
@@ -357,13 +356,12 @@ int main(void) {
 
 				// Если произошла ошибка (флешку выдернули)
 				if (w_res != FR_OK || bw == 0) {
-					f_close(&fil);
-					f_mount(NULL, "", 0);
-					disk_initialize(0);
-					is_recording = 0;
-					file_number = 0;
-					last_mount_res = w_res; // Передаем ошибку в переменную для вывода на экран
-					recording_blocked = 1;
+				    f_close(&fil);
+				    f_mount(NULL, "", 0);
+				    is_recording = 0;
+				    file_number = 0;
+				    last_mount_res = w_res; // Передаем ошибку в переменную для вывода на экран
+				    recording_blocked = 1;
 				}
 			}
 			sensor_timer = HAL_GetTick();
@@ -386,43 +384,30 @@ int main(void) {
 
 		// Проверяем раз в 1 секунду (1000 мс)
 		if (!is_recording && (HAL_GetTick() - sd_check_timer >= 1000)) {
-			sd_check_timer = HAL_GetTick();
+		    sd_check_timer = HAL_GetTick();
 
-			if (file_number > 0) {
-				// Карта активна. Проверяем ее физическое присутствие быстрым запросом
-				FILINFO fno;
-				FRESULT res = f_stat("NONEXIST.TXT", &fno);
+		    if (file_number > 0) {
+		        // Карта вроде бы есть. Заставляем контроллер физически прочитать флешку!
+		        // Ищем несуществующий файл. Это заставит SPI интерфейс дернуть контакты карты.
+		        FILINFO fno;
+		        FRESULT res = f_stat("NONEXIST.TXT", &fno);
 
-				if (res != FR_OK && res != FR_NO_FILE) {
-					file_number = 0;      // Карта пропала
-					f_mount(NULL, "", 0); // Размонтируем файловую систему FatFs
-					last_mount_res = res;
-				}
-			} else {
+		        // Если карта на месте, мы получим ответ FR_NO_FILE (файл не найден).
+		        // Если карту выдернули — интерфейс SPI зависнет и вернет аппаратную ошибку (FR_DISK_ERR и т.д.)
+		        if (res != FR_OK && res != FR_NO_FILE) {
+		            file_number = 0;      // Карта пропала
+		            f_mount(NULL, "", 0); // Обязательно отмонтируем
+		            last_mount_res = res;
+		        }
+		    } else {
 		        // Карты нет. Пытаемся её "нащупать".
 		        f_mount(NULL, "", 0); // Очищаем мусор старой сессии
-
-		        // --- 1. СБРОС АППАРАТНОЙ ОШИБКИ SPI (OVR) ---
-		        // Перезагружаем интерфейс, чтобы сбросить зависание от дребезга контактов
-		        HAL_SPI_DeInit(&hspi2);
-		        HAL_Delay(5);
-		        MX_SPI2_Init();
-		        HAL_Delay(5);
-
-		        // --- 2. ПЕРЕВОД КАРТЫ В SPI РЕЖИМ ---
-		        HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_SET); // Принудительно отпускаем шину
-		        uint8_t dummy_byte = 0xFF;
-		        for (int i = 0; i < 10; i++) {
-		            HAL_SPI_Transmit(&hspi2, &dummy_byte, 1, 10);
-		        }
-		        HAL_Delay(10);
+		        HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_SET);// Принудительно отпускаем шину
 
 		        // Пытаемся смонтировать жестко (флаг 1)
 		        last_mount_res = f_mount(&fs, "", 1);
 
 		        if (last_mount_res == FR_OK) {
-		            recording_blocked = 0; // Снимаем логическую блокировку (чтобы запись могла начаться)
-
 		            // Карта подхвачена! Ищем свободное имя для лога
 		            FILINFO fno;
 		            for (uint16_t i = 1; i <= 999; i++) {
