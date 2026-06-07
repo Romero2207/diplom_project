@@ -42,7 +42,8 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
  C:/ST/diplom_project/BWM427_Inclinometer/Middlewares/Third_Party/FatFs/src/ff.h \
  ../FATFS/Target/user_diskio.h ../Core/Inc/ili9341.h ../Core/Inc/main.h \
  ../Core/Inc/fonts.h ../Core/Inc/fonts.h \
- C:/ST/diplom_project/BWM427_Inclinometer/Middlewares/Third_Party/FatFs/src/diskio.h
+ C:/ST/diplom_project/BWM427_Inclinometer/Middlewares/Third_Party/FatFs/src/diskio.h \
+ ../Core/Inc/fatfs_sd.h
 ../Core/Inc/main.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h:
 ../Core/Inc/stm32f4xx_hal_conf.h:
@@ -91,3 +92,4 @@ C:/ST/diplom_project/BWM427_Inclinometer/Middlewares/Third_Party/FatFs/src/ff.h:
 ../Core/Inc/fonts.h:
 ../Core/Inc/fonts.h:
 C:/ST/diplom_project/BWM427_Inclinometer/Middlewares/Third_Party/FatFs/src/diskio.h:
+../Core/Inc/fatfs_sd.h:

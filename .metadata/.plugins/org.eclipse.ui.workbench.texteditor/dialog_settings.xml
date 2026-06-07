@@ -6,23 +6,23 @@
 		<item key="wholeword" value="false"/>
 		<item key="incremental" value="false"/>
 		<item key="isRegEx" value="false"/>
-		<item key="selection" value="f_mount(NULL, &quot;&quot;, 0);"/>
+		<item key="selection" value="if (HAL_UART_Receive(&amp;huart1, rx_buffer, 9,"/>
 		<list key="findhistory">
-			<item value="f_mount(NULL, &quot;&quot;, 0);"/>
-			<item value="ПРОВЕРКА НАЛИЧИЯ"/>
-			<item value="last_sw_state = current_sw"/>
-			<item value="static FRESULT last_mount_res"/>
-			<item value="static uint8_t last_sw_state"/>
-			<item value="ПРОВЕРКА НАЛИЧИЯ SD КАРТЫ"/>
-			<item value="if (w_res != FR"/>
-			<item value="if (w_res != FR_OK || bw == 0) {&#x0A;  "/>
-			<item value="if (w_res != FR_OK || bw == 0) {&#x0A;    f"/>
-			<item value="if (w_res != FR_OK || bw == 0) {&#x0A;    f_close(&amp;fil);"/>
-			<item value="if (w_res != FR_OK || bw == 0) {&#x0A;    f_close(&amp;fil);4"/>
-			<item value="время"/>
-			<item value="врмя"/>
-			<item value="if (!ema_initialized)"/>
-			<item value="зация"/>
+			<item value="if (HAL_UART_Receive(&amp;huart1, rx_buffer, 9,"/>
+			<item value="current_sw == 0"/>
+			<item value="HAL_UART_Receive(&amp;huart1, rx_buffer"/>
+			<item value="assert_failed"/>
+			<item value="void BWM427_ReadAngles"/>
+			<item value="f (file_number &gt; 0"/>
+			<item value="float cur_x = angle_x[0] -"/>
+			<item value="HAL_GPIO_EXTI_Callback"/>
+			<item value="current_sw"/>
+			<item value="ILI9341_FillScreen"/>
+			<item value="BWM427_ReadAngles"/>
+			<item value="uint8_t rx_bufferBWM427_ReadAngles"/>
+			<item value="uint8_t rx_buffer"/>
+			<item value="f_write"/>
+			<item value="// === ПРОВЕРКА НАЛИЧИЯ SD КАРТЫ (БРОНЕБОЙНОЕ ВОССТАНОВЛЕНИЕ) ==="/>
 		</list>
 		<list key="replacehistory">
 			<item value="hspi2"/>

@@ -1,14 +1,7 @@
-13:57:34 **** Incremental Build of configuration Debug for project BWM427_Inclinometer ****
+17:26:00 **** Incremental Build of configuration Debug for project BWM427_Inclinometer ****
 make -j12 all 
-arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m4 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F411xE -c -I../FATFS/App -I../FATFS/Target -I../Core/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc -I"C:/ST/diplom_project/BWM427_Inclinometer/Middlewares/Third_Party/FatFs/src" -I../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
-arm-none-eabi-gcc -o "BWM427_Inclinometer.elf" @"objects.list"   -mcpu=cortex-m4 -T"C:\ST\diplom_project\BWM427_Inclinometer\STM32F411CEUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="BWM427_Inclinometer.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
-Finished building target: BWM427_Inclinometer.elf
- 
 arm-none-eabi-size   BWM427_Inclinometer.elf 
-arm-none-eabi-objdump -h -S  BWM427_Inclinometer.elf  > "BWM427_Inclinometer.list"
    text	   data	    bss	    dec	    hex	filename
-  69148	    556	   3444	  73148	  11dbc	BWM427_Inclinometer.elf
+  71196	    556	   4548	  76300	  12a0c	BWM427_Inclinometer.elf
 Finished building: default.size.stdout
- 
-Finished building: BWM427_Inclinometer.list
  

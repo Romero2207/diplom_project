@@ -29,6 +29,7 @@
 #include "ili9341.h"     // Подключить драйвер дисплея
 #include "fonts.h"       // Подключить шрифты дисплея
 #include "diskio.h"
+#include "fatfs_sd.h"
 
 // Структура для модуля часов (RTC)
 typedef struct {
@@ -69,18 +70,19 @@ UART_HandleTypeDef huart1;
 /* USER CODE BEGIN PV */
 // --- Данные датчика и математика ---
 uint8_t rx_buffer[9];
-float angle_x = 0.0f, angle_y = 0.0f;
-float offset_x = 0.0f, offset_y = 0.0f;
+float angle_x[2] = { 0.0f, 0.0f }, angle_y[2] = { 0.0f, 0.0f }; // Массивы на 2 датчика
+float offset_x[2] = { 0.0f, 0.0f }, offset_y[2] = { 0.0f, 0.0f };
+uint8_t sensor2_online = 0; // Флаг: 0 - один датчик, 1 - два датчика
 uint8_t modbus_ready = 0;
 
 // --- EMA фильтрация ---
-float ema_alpha = 0.1f; // Коэффициент сглаживания (от 0.01 до 0.99)
+float ema_alpha = 0.15f; // Коэффициент сглаживания (от 0.01 до 0.99)
 float ema_x = 0.0f, ema_y = 0.0f;
 uint8_t ema_initialized = 0;
 
 // --- Файловая система (SD карта) ---
 FATFS fs;
-FIL fil;
+FIL fil[2];
 uint8_t is_recording = 0;
 uint16_t file_number = 0;
 uint8_t sd_err_code = 0; // Переменная для кода ошибки
@@ -106,7 +108,7 @@ float battery_v = 0.0f;
 
 // --- Системные таймеры и алгоритм стабильности ---
 uint32_t record_start_ms = 0;
-float stability_buffer[20] = { 0 };
+float stability_buffer[10] = { 0 };
 uint8_t buffer_idx = 0;
 uint8_t is_stable = 0;
 uint32_t lcd_timer = 0;
@@ -124,7 +126,7 @@ static void MX_SPI2_Init(void);
 static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 // Опросить датчик по протоколу Modbus RTU
-void BWM427_ReadAngles(void);
+void BWM427_ReadAngles(uint8_t sensor_id);
 
 // Применить экспоненциальное сглаживание для фильтрации данных
 float apply_ema(float old_value, float new_value, float alpha);
@@ -191,6 +193,14 @@ int main(void) {
 	ILI9341_Init();
 	ILI9341_FillScreen(0x0000);
 
+	// === ПИНГ ДАТЧИКА №2 ===
+	BWM427_ReadAngles(0x02);
+	if (angle_x[1] != 0.0f || angle_y[1] != 0.0f) {
+		sensor2_online = 1; // Второй датчик откликнулся
+	} else {
+		sensor2_online = 0; // Разъем пуст
+	}
+
 	// Запустить таймер энкодера (аппаратный подсчет импульсов)
 	HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);
 
@@ -200,7 +210,7 @@ int main(void) {
 	// Считать начальное значение энкодера
 	last_encoder_cnt = __HAL_TIM_GET_COUNTER(&htim3);
 
-	// Инициализировать SD-карту
+	// �?нициализировать SD-карту
 	HAL_Delay(500);
 	FRESULT res = f_mount(&fs, "", 1);
 	if (res == FR_OK) {
@@ -217,25 +227,24 @@ int main(void) {
 		sd_err_code = res; // Сохраняем код ошибки!
 	}
 	// === ИНДИКАЦИЯ УСПЕШНОГО ЗАПУСКА ===
-	for (int i = 0; i < 2; i++) {
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
-		HAL_Delay(100);
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+	for (int i = 0; i < 6; i++) {
+		HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
 		HAL_Delay(100);
 	}
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
 	/* USER CODE BEGIN WHILE */
 
-	// Умная настройка времени (сработает только если часы сброшены)
+	// Настройка времени
 	DS3231_GetTime(&current_time);
 	if (current_time.year < 26) {
 		// Если год меньше 26, прошиваем время (например: 11:11:00, 11 сентября 01 года)
-		DS3231_SetFullTime(9, 28, 00, 18, 5, 26);
+		DS3231_SetFullTime(21, 25, 00, 28, 5, 26);
 	}
 
-	static FRESULT last_mount_res = FR_NOT_READY; // Сохранить прошлое состояние тумблера
+	static uint8_t last_sw_state = 0; // Сохранить прошлое состояние тумблера
 	while (1) {
 		char str_lcd[64];
 		DS3231_GetTime(&current_time); // Получаем время с часов
@@ -294,47 +303,71 @@ int main(void) {
 			prev_edit_mode = edit_mode;
 		}
 
-		// 3. УПРАВЛЕНИЕ ЗАПИСЬЮ (Тумблер на PA3 - 0 когда включен, 1 когда выключен)
+		// 3. УПРАВЛЕНИЕ ЗАПИСЬЮ
 		static uint8_t recording_blocked = 0; // Флаг блокировки авто-старта после сбоя
 		uint8_t current_sw = HAL_GPIO_ReadPin(SW_RECORD_GPIO_Port,
 		SW_RECORD_Pin);
 
-		if (current_sw == 0) { // Тумблер в положении ЗАПИСЬ (замкнут на GND)
+		if (current_sw == 0) { // ЗАПИСЬ
 			if (!is_recording && !recording_blocked && file_number > 0) {
-				if (f_open(&fil, current_filename, FA_CREATE_ALWAYS | FA_WRITE)
-						== FR_OK) {
-					record_start_ms = HAL_GetTick();
-					char header[] =
-							"Time,RawX,RawY,OffsetX,OffsetY,CalcX,CalcY,BatV\n";
-					UINT bw;
-					f_write(&fil, header, strlen(header), &bw);
-					is_recording = 1;
+				if (sensor2_online == 0) {
+					BWM427_ReadAngles(0x02);
+					if (angle_x[1] != 0.0f || angle_y[1] != 0.0f) {
+						sensor2_online = 1; // Ура, его воткнули!
+					}
 				}
-			}
-		} else { // Тумблер в положении СТОП (разомкнут, подтянут к 1)
-			recording_blocked = 0;
+				char header[] =
+						"Time,RawX,RawY,OffsetX,OffsetY,CalcX,CalcY,BatV\n";
+				UINT bw;
 
+				// Создаем файл для датчика №1
+				sprintf(current_filename, "M_%03d_1.CSV", file_number);
+				if (f_open(&fil[0], current_filename,
+				FA_CREATE_ALWAYS | FA_WRITE) == FR_OK) {
+					f_write(&fil[0], header, strlen(header), &bw);
+				}
+
+				// Если есть датчик №2, сразу создаем и для него
+				if (sensor2_online) {
+					sprintf(current_filename, "M_%03d_2.CSV", file_number);
+					if (f_open(&fil[1], current_filename,
+					FA_CREATE_ALWAYS | FA_WRITE) == FR_OK) {
+						f_write(&fil[1], header, strlen(header), &bw);
+					}
+				}
+				record_start_ms = HAL_GetTick();
+				is_recording = 1;
+			}
+		} else { // СТОП
+			recording_blocked = 0;
 			if (is_recording) {
-				f_close(&fil);
+				f_close(&fil[0]);
+				if (sensor2_online)
+					f_close(&fil[1]); // Закрываем оба файла
 				is_recording = 0;
 				file_number++;
-				sprintf(current_filename, "M_%03d.CSV", file_number);
 			}
 		}
-		//last_sw_state = current_sw;
+		last_sw_state = current_sw;
 
-		// 4. ОПРОС ДАТЧИКА И РАСЧЕТ СТАБИЛЬНОСТИ
+		// 4. ОПРОС ДАТЧИКА, РАСЧЕТ СТАБИЛЬНОСТИ И ЗАПИСЬ
 		static uint32_t sensor_timer = 0;
 		if (HAL_GetTick() - sensor_timer >= log_delay_ms) {
-			BWM427_ReadAngles();
-			float calc_x = angle_x - offset_x;
-			float calc_y = angle_y - offset_y;
+
+			BWM427_ReadAngles(0x01); // Опрос основного
+			if (sensor2_online) {
+				BWM427_ReadAngles(0x02); // Опрос резервного (если подключен)
+			}
+
+			// Для расчетов стабильности и экрана берем данные с первого (главного) датчика
+			float calc_x = angle_x[0] - offset_x[0];
+			float calc_y = angle_y[0] - offset_y[0];
 
 			stability_buffer[buffer_idx] = calc_x;
-			buffer_idx = (buffer_idx + 1) % 20;
+			buffer_idx = (buffer_idx + 1) % 10;
 
 			float min_v = stability_buffer[0], max_v = stability_buffer[0];
-			for (int i = 1; i < 20; i++) {
+			for (int i = 1; i < 10; i++) {
 				if (stability_buffer[i] < min_v)
 					min_v = stability_buffer[i];
 				if (stability_buffer[i] > max_v)
@@ -343,32 +376,42 @@ int main(void) {
 			is_stable = (max_v - min_v < 0.05f) ? 1 : 0;
 
 			if (is_recording) {
-				char buf[128];
-				sprintf(buf,
-						"%02d.%02d.%02d %02d:%02d:%02d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f\n",
-						current_time.date, current_time.month,
-						current_time.year, current_time.hours,
-						current_time.minutes, current_time.seconds, angle_x,
-						angle_y, offset_x, offset_y, calc_x, calc_y, battery_v);
+				for (uint8_t i = 0; i < (sensor2_online ? 2 : 1); i++) {
+					char buf[128];
+					float cx = angle_x[i] - offset_x[i];
+					float cy = angle_y[i] - offset_y[i];
 
-				UINT bw;
-				FRESULT w_res = f_write(&fil, buf, strlen(buf), &bw);
-				f_sync(&fil); // Синхронизация данных!
+					sprintf(buf,
+							"%02d.%02d.%02d %02d:%02d:%02d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f\n",
+							current_time.date, current_time.month,
+							current_time.year, current_time.hours,
+							current_time.minutes, current_time.seconds,
+							angle_x[i], angle_y[i], offset_x[i], offset_y[i],
+							cx, cy, battery_v);
 
-				// Если произошла ошибка (флешку выдернули во время записи)
-				if (w_res != FR_OK || bw == 0) {
-					f_close(&fil);
-					f_mount(NULL, "", 0);
-					is_recording = 0;
-					file_number = 0;
-					last_mount_res = w_res;
-					recording_blocked = 1;
+					UINT bw;
+					FRESULT w_res = f_write(&fil[i], buf, strlen(buf), &bw);
+					f_sync(&fil[i]);
+
+					// Защита при случайном выдергивании
+					if (w_res != FR_OK || bw == 0) {
+						f_close(&fil[0]);
+						if (sensor2_online)
+							f_close(&fil[1]);
+						is_recording = 0;
+						file_number = 0;
+						sd_err_code = w_res;
+						recording_blocked = 1;
+						HAL_SPI_DeInit(&hspi2);
+						MX_SPI2_Init();
+						break; // Выход из цикла записи
+					}
 				}
 			}
 			sensor_timer = HAL_GetTick();
 		}
 
-		// 5. МОНИТОРИНГ БАТАРЕИ (для 10к и 3.3к)
+		// 5. МОНИТОРИНГ БАТАРЕИ
 		static uint32_t bat_timer = 0;
 		if (HAL_GetTick() - bat_timer >= 1000) {
 			if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK) {
@@ -379,33 +422,36 @@ int main(void) {
 			bat_timer = HAL_GetTick();
 		}
 
-		// === ПРОВЕРКА НАЛИЧИЯ SD КАРТЫ (ГОРЯЧАЯ ЗАМЕНА) ===
+		// === ПРОВЕРКА НАЛИЧИЯ SD КАРТЫ (ПРЯМОЙ АППАРАТНЫЙ ОБХОД) ===
 		static uint32_t sd_check_timer = 0;
+		static FRESULT last_mount_res = FR_NOT_READY;
 
-		// Проверяем раз в 1 секунду (1000 мс)
-		if (!is_recording && (HAL_GetTick() - sd_check_timer >= 1000)) {
-			sd_check_timer = HAL_GetTick();
+		if (!is_recording && (HAL_GetTick() - sd_check_timer >= 2000)) {
+			// 1. Смахиваем аппаратные ошибки SPI от дребезга контактов
+			if (__HAL_SPI_GET_FLAG(&hspi2, SPI_FLAG_OVR)) {
+				__HAL_SPI_CLEAR_OVRFLAG(&hspi2);
+			}
 
 			if (file_number > 0) {
-				FILINFO fno;
-				FRESULT res = f_stat("NONEXIST.TXT", &fno);
-
-				// Если карту выдернули в режиме ожидания
-				if (res != FR_OK && res != FR_NO_FILE) {
+				// 2. ПРОВЕРКА В ОБХОД КЭША ST. Читаем физический сектор 0 напрямую!
+				static uint8_t check_buf[512];
+				if (SD_disk_read(0, check_buf, 0, 1) != RES_OK) {
+					// Физического ответа нет — карту 100% выдернули!
 					file_number = 0;
 					f_mount(NULL, "", 0);
-					last_mount_res = res;
+					last_mount_res = FR_NOT_READY;
 				}
 			} else {
-				// Очищаем мусор старой сессии
 				f_mount(NULL, "", 0);
 
-				// Пытаемся смонтировать жестко (FatFs сам разбудит карту!)
+				// 3.Вызываем инициализацию напрямую!
+				SD_disk_initialize(0);
+
+				// 4. Монтируем.
 				last_mount_res = f_mount(&fs, "", 1);
 
 				if (last_mount_res == FR_OK) {
-					recording_blocked = 0; // Снимаем блокировку записи
-
+					recording_blocked = 0;
 					FILINFO fno;
 					for (uint16_t i = 1; i <= 999; i++) {
 						sprintf(current_filename, "M_%03d.CSV", i);
@@ -418,13 +464,13 @@ int main(void) {
 						file_number = 1;
 				}
 			}
+			sd_check_timer = HAL_GetTick();
 		}
-
 		// 6. ОБНОВЛЕНИЕ ЭКРАНА
 		if (HAL_GetTick() - lcd_timer >= 50) {
 			static float old_x = -999.0f, old_y = -999.0f;
-			float cur_x = angle_x - offset_x;
-			float cur_y = angle_y - offset_y;
+			float cur_x = angle_x[0] - offset_x[0]; // Экран всегда показывает датчик 1
+			float cur_y = angle_y[0] - offset_y[0];
 
 			// Углы
 			if (fabsf(cur_x - old_x) > 0.005f) {
@@ -476,16 +522,19 @@ int main(void) {
 			sprintf(str_lcd, "BAT:%.1fV", battery_v);
 			ILI9341_WriteString(5, 220, str_lcd, Font_7x10, 0xFFFF, 0x0000);
 
-			// Отрисовка статуса SD на общей линии Y = 220
+			// Отрисовка статуса SD (Сдвинуто на X=90)
+			// Отрисовка статуса SD
 			if (file_number > 0) {
 				char status_str[30];
-				sprintf(status_str, "FILE:%s   ", current_filename);
-				ILI9341_WriteString(70, 220, status_str, Font_7x10, 0xFFE0,
+				// Выводим номер замера и количество найденных датчиков
+				sprintf(status_str, "M_%03d [%dD]   ", file_number,
+						sensor2_online ? 2 : 1);
+				ILI9341_WriteString(90, 220, status_str, Font_7x10, 0xFFE0,
 						0x0000);
 			} else {
 				char err_str[30];
 				sprintf(err_str, "NO SD (E:%02d)   ", last_mount_res);
-				ILI9341_WriteString(70, 220, err_str, Font_7x10, 0xF800,
+				ILI9341_WriteString(90, 220, err_str, Font_7x10, 0xF800,
 						0x0000);
 			}
 
@@ -872,13 +921,6 @@ static void MX_GPIO_Init(void) {
 	HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
 
-// Дополнительная инициализация PB15 для RS485
-	GPIO_InitStruct.Pin = GPIO_PIN_15;
-	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_15, GPIO_PIN_RESET);
 	/* USER CODE END MX_GPIO_Init_2 */
 }
 
@@ -938,57 +980,108 @@ uint16_t Modbus_CRC16(uint8_t *buf, uint16_t len) {
 	}
 	return crc; // Возвращает Low byte в младшем байте, High byte в старшем
 }
-
 // Применить экспоненциальное сглаживание (фильтр EMA)
 float apply_ema(float old_value, float new_value, float alpha) {
 	return (alpha * new_value) + ((1.0f - alpha) * old_value);
 }
 
+// Быстрый и пуленепробиваемый медианный фильтр для 3 значений
+float median3(float a, float b, float c) {
+	float temp;
+	if (a > b) {
+		temp = a;
+		a = b;
+		b = temp;
+	}
+	if (b > c) {
+		temp = b;
+		b = c;
+		c = temp;
+	}
+	if (a > b) {
+		temp = a;
+		a = b;
+		b = temp;
+	}
+	return b;
+}
+
 // Опросить датчик BWM427 по интерфейсу RS485 (Modbus RTU)
-void BWM427_ReadAngles(void) {
-// Сформировать запрос: ID=01, Func=03, Reg=0001, Count=0002
-	uint8_t cmd[8] = { 0x01, 0x03, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00 };
+void BWM427_ReadAngles(uint8_t sensor_id) {
+	uint8_t arr_idx = sensor_id - 1; // 0 для ID=1, 1 для ID=2
+
+	// Сформировать запрос (подставляем нужный ID)
+	uint8_t cmd[8] = { sensor_id, 0x03, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00 };
 	uint16_t crc = Modbus_CRC16(cmd, 6);
 	cmd[6] = (uint8_t) (crc & 0xFF);
 	cmd[7] = (uint8_t) ((crc >> 8) & 0xFF);
 
-// Переключить MAX485 в режим передачи (DE=1, RE=1)
+	// Переключить MAX485 в режим передачи
 	HAL_GPIO_WritePin(RS485_DE_PORT, RS485_DE_PIN, GPIO_PIN_SET);
 	HAL_GPIO_WritePin(RS485_RE_PORT, RS485_RE_PIN, GPIO_PIN_SET);
 	HAL_UART_Transmit(&huart1, cmd, 8, 10);
 
-// Дождаться завершения физической передачи последнего бита
+	// Дождаться завершения физической передачи
 	while (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_TC) == RESET)
 		;
 
-// Переключить MAX485 в режим приема (DE=0, RE=0)
+	// Переключить MAX485 в режим приема
 	HAL_GPIO_WritePin(RS485_DE_PORT, RS485_DE_PIN, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(RS485_RE_PORT, RS485_RE_PIN, GPIO_PIN_RESET);
 
-// Принять ответ (9 байт)
-	if (HAL_UART_Receive(&huart1, rx_buffer, 9, 50) == HAL_OK) {
-		// Проверить контрольную сумму ответа
+	// Принять ответ (таймаут 30 мс, чтобы не тормозить цикл, если датчика нет)
+	if (HAL_UART_Receive(&huart1, rx_buffer, 9, 10) == HAL_OK) {
 		uint16_t received_crc = (rx_buffer[8] << 8) | rx_buffer[7];
 		if (Modbus_CRC16(rx_buffer, 7) == received_crc) {
 
-			// Извлечь сырые данные и перевести в градусы
 			int16_t rx_x = (int16_t) ((rx_buffer[3] << 8) | rx_buffer[4]);
 			int16_t rx_y = (int16_t) ((rx_buffer[5] << 8) | rx_buffer[6]);
 
 			float raw_angle_x = (float) (rx_x - 10000) / 100.0f;
 			float raw_angle_y = (float) (rx_y - 10000) / 100.0f;
 
-			// Выполнить фильтрацию EMA
-			if (!ema_initialized) {
-				ema_x = raw_angle_x;
-				ema_y = raw_angle_y;
-				ema_initialized = 1;
-			} else {
-				ema_x = apply_ema(ema_x, raw_angle_x, ema_alpha);
-				ema_y = apply_ema(ema_y, raw_angle_y, ema_alpha);
+			// --- КАСКАДНАЯ ФИЛЬТРАЦИЯ ДЛЯ 2 ДАТЧИКОВ ---
+			static float m_buf_x[2][3] = { 0 };
+			static float m_buf_y[2][3] = { 0 };
+			static float ema_x[2] = { 0 };
+			static float ema_y[2] = { 0 };
+			static uint8_t init_flag[2] = { 0, 0 };
+
+			// Быстрое заполнение буфера при самом первом запуске датчика
+			if (!init_flag[arr_idx]) {
+				m_buf_x[arr_idx][0] = m_buf_x[arr_idx][1] =
+						m_buf_x[arr_idx][2] = raw_angle_x;
+				m_buf_y[arr_idx][0] = m_buf_y[arr_idx][1] =
+						m_buf_y[arr_idx][2] = raw_angle_y;
 			}
-			angle_x = ema_x;
-			angle_y = ema_y;
+
+			// Сдвигаем буфер
+			m_buf_x[arr_idx][2] = m_buf_x[arr_idx][1];
+			m_buf_x[arr_idx][1] = m_buf_x[arr_idx][0];
+			m_buf_x[arr_idx][0] = raw_angle_x;
+			m_buf_y[arr_idx][2] = m_buf_y[arr_idx][1];
+			m_buf_y[arr_idx][1] = m_buf_y[arr_idx][0];
+			m_buf_y[arr_idx][0] = raw_angle_y;
+
+			// 1. Медианный фильтр
+			float med_x = median3(m_buf_x[arr_idx][0], m_buf_x[arr_idx][1],
+					m_buf_x[arr_idx][2]);
+			float med_y = median3(m_buf_y[arr_idx][0], m_buf_y[arr_idx][1],
+					m_buf_y[arr_idx][2]);
+
+			// 2. EMA фильтр
+			if (!init_flag[arr_idx]) {
+				ema_x[arr_idx] = med_x;
+				ema_y[arr_idx] = med_y;
+				init_flag[arr_idx] = 1;
+			} else {
+				ema_x[arr_idx] = apply_ema(ema_x[arr_idx], med_x, ema_alpha);
+				ema_y[arr_idx] = apply_ema(ema_y[arr_idx], med_y, ema_alpha);
+			}
+
+			// Сохраняем в глобальный массив
+			angle_x[arr_idx] = ema_x[arr_idx];
+			angle_y[arr_idx] = ema_y[arr_idx];
 			modbus_ready = 1;
 		}
 	}
@@ -1000,9 +1093,11 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 		static uint32_t last_press_time = 0;
 		if (HAL_GetTick() - last_press_time > 200) {
 
-			if (menu_index == 2) {
-				offset_x = angle_x;
-				offset_y = angle_y;
+			if (menu_index == 2) { // Обнуление для обоих датчиков
+				offset_x[0] = angle_x[0];
+				offset_y[0] = angle_y[0];
+				offset_x[1] = angle_x[1];
+				offset_y[1] = angle_y[1];
 			} else {
 				edit_mode = !edit_mode;
 			}
