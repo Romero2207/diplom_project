@@ -87,9 +87,6 @@ uint8_t is_recording = 0;
 uint16_t file_number = 0;
 uint8_t sd_err_code = 0; // Переменная для кода ошибки
 char current_filename[16];
-// --- Буферы ---
-char sd_buffer[2][1024]; // Два независимых буфера по 1024 байта
-uint16_t buffer_length[2] = { 0, 0 }; // Счетчики их заполнения
 
 // --- Интерфейс и энкодер ---
 int16_t last_encoder_cnt = 0;
@@ -213,13 +210,13 @@ int main(void) {
 	// Считать начальное значение энкодера
 	last_encoder_cnt = __HAL_TIM_GET_COUNTER(&htim3);
 
-	// Инициализировать SD-карту
+	// �?нициализировать SD-карту
 	HAL_Delay(500);
 	FRESULT res = f_mount(&fs, "", 1);
 	if (res == FR_OK) {
 		FILINFO fno;
 		for (uint16_t i = 1; i <= 999; i++) {
-			sprintf(current_filename, "M_%03d_1.CSV", i);
+			sprintf(current_filename, "M_%03d.CSV", i);
 			if (f_stat(current_filename, &fno) != FR_OK) {
 				file_number = i;
 				break;
@@ -241,46 +238,16 @@ int main(void) {
 	/* USER CODE BEGIN WHILE */
 
 	// Настройка времени
-	// --- ПРОГРАММНЫЕ ЧАСЫ (Для работы SD-карты и графиков) ---
-	current_time.date = 1;      // День (ОБЯЗАТЕЛЬНО > 0 для FatFS)
-	current_time.month = 6;     // Месяц (ОБЯЗАТЕЛЬНО > 0)
-	current_time.year = 26;
-	current_time.hours = 12;
-	current_time.minutes = 0;
-	current_time.seconds = 0;
+	DS3231_GetTime(&current_time);
+	if (current_time.year < 26) {
+		// Если год меньше 26, прошиваем время (например: 11:11:00, 11 сентября 01 года)
+		DS3231_SetFullTime(14, 45, 00, 9, 6, 26);
+	}
 
-	uint32_t last_time_update = HAL_GetTick(); // Переменная таймера
-
-	//		DS3231_GetTime(&current_time);
-	//		if (current_time.year < 26) {
-	//			// Если год меньше 26, прошиваем время (например: 11:11:00, 11 сентября 01 года)
-	//			DS3231_SetFullTime(14, 45, 00, 9, 6, 26);
-	//		}
-
-	// -----------------------------------------------------------
 	static uint8_t last_sw_state = 0; // Сохранить прошлое состояние тумблера
 	while (1) {
 		char str_lcd[64];
-
-		//DS3231_GetTime(&current_time); // Получаем время с часов
-
-		// Моторчик часов: каждую секунду прибавляем время
-		if (HAL_GetTick() - last_time_update >= 1000) {
-			last_time_update = HAL_GetTick();
-			current_time.seconds++;
-			if (current_time.seconds >= 60) {
-				current_time.seconds = 0;
-				current_time.minutes++;
-				if (current_time.minutes >= 60) {
-					current_time.minutes = 0;
-					current_time.hours++;
-					if (current_time.hours >= 24) {
-						current_time.hours = 0;
-						current_time.date++;
-					}
-				}
-			}
-		}
+		DS3231_GetTime(&current_time); // Получаем время с часов
 
 		// 1. ОБРАБОТКА ЭНКОДЕРА (Защита от скачков и дребезка контактов)
 		int16_t current_cnt = __HAL_TIM_GET_COUNTER(&htim3);
@@ -369,22 +336,11 @@ int main(void) {
 					}
 				}
 				record_start_ms = HAL_GetTick();
-				buffer_length[0] = 0;
-				buffer_length[1] = 0; // Сброс буферов
 				is_recording = 1;
 			}
 		} else { // СТОП
 			recording_blocked = 0;
 			if (is_recording) {
-				// Сброс оставшихся буферов
-				for (uint8_t i = 0; i < (sensor2_online ? 2 : 1); i++) {
-					if (buffer_length[i] > 0) {
-						UINT bw;
-						f_write(&fil[i], sd_buffer[i], buffer_length[i], &bw);
-						f_sync(&fil[i]);
-						buffer_length[i] = 0;
-					}
-				}
 				f_close(&fil[0]);
 				if (sensor2_online)
 					f_close(&fil[1]); // Закрываем оба файла
@@ -407,45 +363,35 @@ int main(void) {
 			float calc_x = angle_x[0] - offset_x[0];
 			float calc_y = angle_y[0] - offset_y[0];
 
-			stability_buffer[buffer_idx] = calc_y;
-						buffer_idx = (buffer_idx + 1) % 10;
+			stability_buffer[buffer_idx] = calc_x;
+			buffer_idx = (buffer_idx + 1) % 10;
 
-						float min_v = stability_buffer[0], max_v = stability_buffer[0];
-						for (int i = 1; i < 10; i++) {
-							if (stability_buffer[i] < min_v)
-								min_v = stability_buffer[i];
-							if (stability_buffer[i] > max_v)
-								max_v = stability_buffer[i];
-						}
-
-						// Разрешаем запись, если размах качки меньше 1.5 градусов
-						is_stable = (max_v - min_v < 1.5f) ? 1 : 0;
+			float min_v = stability_buffer[0], max_v = stability_buffer[0];
+			for (int i = 1; i < 10; i++) {
+				if (stability_buffer[i] < min_v)
+					min_v = stability_buffer[i];
+				if (stability_buffer[i] > max_v)
+					max_v = stability_buffer[i];
+			}
+			is_stable = (max_v - min_v < 0.05f) ? 1 : 0;
 
 			if (is_recording) {
 				for (uint8_t i = 0; i < (sensor2_online ? 2 : 1); i++) {
 					char buf[128];
 					float cx = angle_x[i] - offset_x[i];
 					float cy = angle_y[i] - offset_y[i];
-					// 1. Дописываем новую строку прямо в наш массив (буфер), плюсуя длину
-					buffer_length[i] +=
-							sprintf(&sd_buffer[i][buffer_length[i]],
-									"%02d.%02d.%02d %02d:%02d:%02d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f\n",
-									current_time.date, current_time.month,
-									current_time.year, current_time.hours,
-									current_time.minutes, current_time.seconds,
-									angle_x[i], angle_y[i], offset_x[i],
-									offset_y[i], cx, cy, battery_v);
 
-					FRESULT w_res = FR_OK;
-					UINT bw = 1; // Заглушка, чтобы не срабатывала ошибка ниже
+					sprintf(buf,
+							"%02d.%02d.%02d %02d:%02d:%02d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f\n",
+							current_time.date, current_time.month,
+							current_time.year, current_time.hours,
+							current_time.minutes, current_time.seconds,
+							angle_x[i], angle_y[i], offset_x[i], offset_y[i],
+							cx, cy, battery_v);
 
-					// 2. Сбрасываем на флешку только если накопился полный сектор (512 байт)
-					if (buffer_length[i] >= 512) {
-						w_res = f_write(&fil[i], sd_buffer[i], buffer_length[i],
-								&bw);
-						f_sync(&fil[i]);      // Сохраняем физически
-						buffer_length[i] = 0; // Обнуляем счетчик для новой порции
-					}
+					UINT bw;
+					FRESULT w_res = f_write(&fil[i], buf, strlen(buf), &bw);
+					f_sync(&fil[i]);
 
 					// Защита при случайном выдергивании
 					if (w_res != FR_OK || bw == 0) {
@@ -508,7 +454,7 @@ int main(void) {
 					recording_blocked = 0;
 					FILINFO fno;
 					for (uint16_t i = 1; i <= 999; i++) {
-						sprintf(current_filename, "M_%03d_1.CSV", i);
+						sprintf(current_filename, "M_%03d.CSV", i);
 						if (f_stat(current_filename, &fno) == FR_NO_FILE) {
 							file_number = i;
 							break;
@@ -1076,8 +1022,7 @@ void BWM427_ReadAngles(uint8_t sensor_id) {
 	HAL_UART_Transmit(&huart1, cmd, 8, 20);
 
 	// Дождаться завершения физической передачи
-	while (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_TC) == RESET)
-		;
+	while (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_TC) == RESET);
 
 	// Переключить MAX485 в режим приема
 	HAL_GPIO_WritePin(RS485_DE_PORT, RS485_DE_PIN, GPIO_PIN_RESET);

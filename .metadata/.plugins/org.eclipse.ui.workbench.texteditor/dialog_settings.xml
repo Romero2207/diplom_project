@@ -6,23 +6,23 @@
 		<item key="wholeword" value="false"/>
 		<item key="incremental" value="false"/>
 		<item key="isRegEx" value="false"/>
-		<item key="selection" value="if (HAL_UART_Receive(&amp;huart1, rx_buffer, 9,"/>
+		<item key="selection" value="tability_buffer[buffer_idx] = cal"/>
 		<list key="findhistory">
-			<item value="if (HAL_UART_Receive(&amp;huart1, rx_buffer, 9,"/>
-			<item value="current_sw == 0"/>
-			<item value="HAL_UART_Receive(&amp;huart1, rx_buffer"/>
-			<item value="assert_failed"/>
-			<item value="void BWM427_ReadAngles"/>
-			<item value="f (file_number &gt; 0"/>
-			<item value="float cur_x = angle_x[0] -"/>
-			<item value="HAL_GPIO_EXTI_Callback"/>
-			<item value="current_sw"/>
-			<item value="ILI9341_FillScreen"/>
-			<item value="BWM427_ReadAngles"/>
-			<item value="uint8_t rx_bufferBWM427_ReadAngles"/>
-			<item value="uint8_t rx_buffer"/>
-			<item value="f_write"/>
-			<item value="// === ПРОВЕРКА НАЛИЧИЯ SD КАРТЫ (БРОНЕБОЙНОЕ ВОССТАНОВЛЕНИЕ) ==="/>
+			<item value="tability_buffer[buffer_idx] = cal"/>
+			<item value="tability_buffer"/>
+			<item value="for (int i = "/>
+			<item value="for (int i = 9"/>
+			<item value="for (int i = 9; i &gt; 0; i--"/>
+			<item value="if (is_recording"/>
+			<item value="recording_blocked = 0;"/>
+			<item value="record_start_ms = HAL_GetTick();"/>
+			<item value="FATFS SDFatFs"/>
+			<item value="sprintf(current_filename"/>
+			<item value="current_time.date"/>
+			<item value="while"/>
+			<item value="USER CODE BEGIN WHILE"/>
+			<item value="sprintf(str_lcd, &quot;%02d:%02d:%"/>
+			<item value="время"/>
 		</list>
 		<list key="replacehistory">
 			<item value="hspi2"/>

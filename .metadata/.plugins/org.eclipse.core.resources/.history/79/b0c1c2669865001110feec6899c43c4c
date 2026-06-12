@@ -407,19 +407,17 @@ int main(void) {
 			float calc_x = angle_x[0] - offset_x[0];
 			float calc_y = angle_y[0] - offset_y[0];
 
-			stability_buffer[buffer_idx] = calc_y;
-						buffer_idx = (buffer_idx + 1) % 10;
+			stability_buffer[buffer_idx] = calc_x;
+			buffer_idx = (buffer_idx + 1) % 10;
 
-						float min_v = stability_buffer[0], max_v = stability_buffer[0];
-						for (int i = 1; i < 10; i++) {
-							if (stability_buffer[i] < min_v)
-								min_v = stability_buffer[i];
-							if (stability_buffer[i] > max_v)
-								max_v = stability_buffer[i];
-						}
-
-						// Разрешаем запись, если размах качки меньше 1.5 градусов
-						is_stable = (max_v - min_v < 1.5f) ? 1 : 0;
+			float min_v = stability_buffer[0], max_v = stability_buffer[0];
+			for (int i = 1; i < 10; i++) {
+				if (stability_buffer[i] < min_v)
+					min_v = stability_buffer[i];
+				if (stability_buffer[i] > max_v)
+					max_v = stability_buffer[i];
+			}
+			is_stable = (max_v - min_v < 0.05f) ? 1 : 0;
 
 			if (is_recording) {
 				for (uint8_t i = 0; i < (sensor2_online ? 2 : 1); i++) {
